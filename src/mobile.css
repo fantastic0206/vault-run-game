@@ -111,32 +111,35 @@
   .page-game .loadout-bar {
     position: absolute; top: auto; bottom: calc(var(--safe-bottom) + max(128px, calc(var(--stick-size) + 32px)));
     left: 50%; right: auto; transform: translateX(-50%);
-    display: flex; align-items: stretch; gap: 4px; width: min(320px, calc(100% - var(--safe-left) - var(--safe-right) - 8px));
-    height: 52px; padding: 3px; margin: 0; border-radius: 6px; z-index: 4;
+    display: flex; align-items: stretch; gap: 3px; width: min(248px, calc(100% - var(--safe-left) - var(--safe-right) - 8px));
+    height: 32px; padding: 2px; margin: 0; border-radius: 5px; z-index: 4;
     background: #061827e8; border: 1px solid #7595a9aa; pointer-events: auto;
   }
   .page-game .loadout-bar button {
-    flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 44px; height: 44px;
-    padding: 4px 2px; gap: 0; border-radius: 3px; touch-action: none;
+    flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; height: 100%;
+    padding: 0 2px; gap: 0; border-radius: 3px; touch-action: none;
   }
-  .page-game .loadout-bar strong { max-width: 100%; font: 800 13px/1 var(--heading); letter-spacing: .2px; }
+  .page-game .loadout-bar strong { max-width: 100%; font: 800 10px/1 var(--heading); letter-spacing: .15px; }
   .page-game .loadout-bar kbd, .page-game .loadout-bar small { display: none; }
   .page-game .touch-controls { display: block; position: absolute; inset: 0; width: auto; height: auto; padding: 0; margin: 0; pointer-events: none; z-index: 4; }
   .page-game .touch-stick {
     position: absolute; top: auto; bottom: calc(var(--safe-bottom) + 12px);
     width: var(--stick-size); height: var(--stick-size); padding: 0; margin: 0; border-radius: 50%;
-    display: grid; place-items: center; border: 1px solid #90bcc780; background: #0c2b3a88;
+    display: flex; align-items: center; justify-content: center; border: 1px solid #90bcc780; background: #0c2b3a88;
     touch-action: none; user-select: none; -webkit-touch-callout: none; pointer-events: auto;
   }
   .page-game .touch-stick.move { left: calc(var(--safe-left) + 4px); right: auto; }
   .page-game .touch-stick.aim { right: calc(var(--safe-right) + 4px); left: auto; border-color: #d3b575a0; background: #45361b77; }
   .page-game .touch-stick > .stick-ring { position: absolute; inset: 10px; width: auto; height: auto; margin: 0; border: 1px dashed #9fb9c54d; border-radius: 50%; pointer-events: none; }
   .page-game .touch-stick > i {
-    position: relative; inset: auto; display: grid; place-items: center; width: 40%; height: 40%; margin: 0;
+    position: relative; inset: auto; flex: 0 0 auto; display: grid; place-items: center;
+    width: calc(var(--stick-size) * 0.4); height: calc(var(--stick-size) * 0.4);
+    min-width: calc(var(--stick-size) * 0.4); min-height: calc(var(--stick-size) * 0.4);
+    margin: 0; aspect-ratio: 1; box-sizing: border-box;
     border: 1px solid #b3d4d7a0; border-radius: 50%; background: #406776cc; color: #d1eeeb; pointer-events: none;
   }
   .page-game .touch-stick.aim > i { background: #8b7139ba; color: #ffe8ac; border-color: #edd398a0; }
-  .page-game .touch-stick > i > svg { width: 20px; height: 20px; }
+  .page-game .touch-stick > i > svg { width: 46%; height: 46%; }
   .page-game .touch-stick > small { position: absolute; left: 0; right: 0; top: auto; bottom: 7px; text-align: center; font: 7px/9px var(--mono); letter-spacing: .3px; color: #bed1da; pointer-events: none; }
   .page-game .touch-actions {
     position: absolute; left: 50%; right: auto; top: auto; bottom: calc(var(--safe-bottom) + 14px); transform: translateX(-50%);
@@ -182,8 +185,8 @@
 
   @media (min-width: 480px) and (orientation: landscape), (min-width: 600px) {
     .app { --stick-size: clamp(84px, 30dvh, 116px); }
-    .page-game .loadout-bar { bottom: calc(var(--safe-bottom) + 12px); width: min(280px, calc(100% - var(--stick-size) - var(--stick-size) - var(--safe-left) - var(--safe-right) - 28px)); }
-    .page-game .touch-actions { grid-template-columns: repeat(3, 52px); grid-template-rows: 52px; width: 172px; bottom: calc(var(--safe-bottom) + 72px); }
+    .page-game .loadout-bar { bottom: calc(var(--safe-bottom) + 10px); width: min(220px, calc(100% - var(--stick-size) - var(--stick-size) - var(--safe-left) - var(--safe-right) - 28px)); }
+    .page-game .touch-actions { grid-template-columns: repeat(3, 52px); grid-template-rows: 52px; width: 172px; bottom: calc(var(--safe-bottom) + 48px); }
     .page-game .touch-actions > button { width: 52px; height: 52px; }
     .page-game .touch-actions > button:last-child { grid-column: auto; justify-self: auto; }
     .mobile-tactical .tactical-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -203,7 +206,7 @@
     .page-game .weapon-panel strong { font-size: 20px; }
     .page-game .reload-track { margin-top: 2px; }
     @media (min-width: 480px) {
-      .page-game .touch-actions { grid-template-columns: repeat(3, 44px); grid-template-rows: 44px; width: 148px; bottom: calc(var(--safe-bottom) + 72px); }
+      .page-game .touch-actions { grid-template-columns: repeat(3, 44px); grid-template-rows: 44px; width: 148px; bottom: calc(var(--safe-bottom) + 48px); }
       .page-game .touch-actions > button { width: 44px; height: 44px; }
     }
     .page-game .hud-notices { top: calc(var(--safe-top) + 104px); }
