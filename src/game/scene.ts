@@ -1,6 +1,12 @@
 import * as THREE from "three";
 import { CORE, EXTRACTION, OBSTACLES, RELAYS, VENTS } from "./map";
 import { COLORS, type Input, type World } from "./types";
+import { steelFloor, glowTexture, graphicsQuality } from "./art";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 interface Rig {
   group: THREE.Group;
@@ -8,6 +14,7 @@ interface Rig {
   flash: THREE.Mesh;
   body: THREE.Mesh;
   target: THREE.Vector3;
+  label?: THREE.Sprite;
 }
 const v3 = new THREE.Vector3();
 export class Battlefield {
@@ -20,6 +27,7 @@ export class Battlefield {
   private enemies = new Map<number, THREE.Group>();
   private bullets = new Map<number, THREE.Mesh>();
   private particles = new Map<number, THREE.Group>();
+  private hazards = new Map<number, THREE.Group>();
   private terminals: THREE.Group[] = [];
   private medkits: THREE.Group[] = [];
   private labels: THREE.Sprite[] = [];
@@ -29,11 +37,14 @@ export class Battlefield {
   private exfil = new THREE.Group();
   private reticle: THREE.Mesh;
   private observer: ResizeObserver;
+  private composer?: EffectComposer;
+  private textures: THREE.Texture[] = [];
+  private glow = glowTexture();
   private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.05);
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private aimTarget = new THREE.Vector3();
-  private mobile = matchMedia("(pointer: coarse)").matches;
+  private mobile = graphicsQuality() === "low";
   private reducedMotion = matchMedia("(prefers-reduced-motion: reduce)")
     .matches;
   private bulletGeometry = new THREE.CylinderGeometry(0.055, 0.055, 0.85, 6);
@@ -45,19 +56,19 @@ export class Battlefield {
       powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(
-      Math.min(devicePixelRatio || 1, this.mobile ? 1.3 : 1.75),
+      Math.min(devicePixelRatio || 1, this.mobile ? 1 : 1.5),
     );
     this.renderer.shadowMap.enabled = !this.mobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.1;
     this.scene.background = new THREE.Color("#0a111e");
     this.scene.fog = new THREE.FogExp2("#111c2b", 0.014);
-    this.scene.add(new THREE.HemisphereLight("#b5caed", "#151b2b", 1.35));
+    this.scene.add(new THREE.HemisphereLight("#a9c7ed", "#11182b", 1.15));
     const sun = new THREE.DirectionalLight("#ffe7b9", 3.2);
     sun.position.set(-12, 28, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -32;
     sun.shadow.camera.right = 32;
     sun.shadow.camera.top = 28;
@@ -76,6 +87,12 @@ export class Battlefield {
     purple.position.set(18, 7, -8);
     this.scene.add(purple);
     this.buildLevel();
+    if (!this.mobile) {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1,1), .38, .35, 1.05));
+      this.composer.addPass(new OutputPass());
+    }
     this.reticle = new THREE.Mesh(
       new THREE.RingGeometry(0.24, 0.3, 24),
       new THREE.MeshBasicMaterial({
@@ -189,20 +206,9 @@ export class Battlefield {
   }
   private buildLevel() {
     this.box(51, 0.7, 41, "#263244", 0, -0.5, 0);
-    this.box(50, 0.12, 40, "#293b4c", 0, -0.1, 0);
-    const tileGeo = new THREE.BoxGeometry(1.97, 0.03, 1.97),
-      tileMat = this.material("#304351");
-    const tiles = new THREE.InstancedMesh(tileGeo, tileMat, 250);
-    const matrix = new THREE.Matrix4();
-    let k = 0;
-    for (let x = 0; x < 25; x++)
-      for (let z = 0; z < 20; z++)
-        if ((x + z) % 2 === 0) {
-          matrix.makeTranslation(-24 + x * 2, 0.01, -19 + z * 2);
-          tiles.setMatrixAt(k++, matrix);
-        }
-    tiles.receiveShadow = true;
-    this.scene.add(tiles);
+    const floorMap = steelFloor(); this.textures.push(floorMap);
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(50,.12,40), new THREE.MeshStandardMaterial({map:floorMap, color:"#b3c6df", metalness:.62, roughness:.42}));
+    floor.position.y = -.08; floor.receiveShadow = true; this.scene.add(floor);
     this.box(51, 3.2, 0.8, "#1b293b", 0, 1.4, -20.4);
     this.box(0.8, 2.4, 40, "#1c2b3e", -25.4, 1, 0);
     this.box(0.8, 2.4, 40, "#1c2b3e", 25.4, 1, 0);
@@ -228,20 +234,26 @@ export class Battlefield {
     for (const o of OBSTACLES) {
       if (o.kind === "door") continue;
       const g = new THREE.Group();
+      g.userData.static = true;
       g.position.set(o.x, 0, o.z);
       this.scene.add(g);
       this.box(
         o.w,
         o.h,
         o.d,
-        o.kind === "crate" ? "#364b5b" : "#24384c",
+        o.kind === "crate" ? "#2b3e57" : "#24384c",
         0,
         o.h / 2,
         0,
         g,
       );
       if (o.kind === "crate") {
-        this.box(o.w + 0.08, 0.13, o.d + 0.08, "#4c6572", 0, o.h, 0, g);
+        this.box(o.w + 0.08, 0.13, o.d + 0.08, "#687583", 0, o.h, 0, g);
+        this.box(o.w * .8, .08, o.d * .76, "#26394d", 0, o.h+.1, 0, g);
+        for (const sx of [-1,1]) for (const sz of [-1,1]) {
+          this.box(.28, o.h+.15,.27,"#b6965a", sx*(o.w/2-.08),o.h/2,sz*(o.d/2-.08),g);
+          this.box(.12,.055,.12,"#e7d2a4",sx*(o.w/2-.08),o.h+.19,sz*(o.d/2-.08),g);
+        }
         for (const x of [-o.w * 0.31, o.w * 0.31]) {
           this.box(0.13, o.h + 0.13, o.d + 0.11, "#b69b5b", x, o.h / 2, 0, g);
         }
@@ -356,12 +368,16 @@ export class Battlefield {
       this.box(1.4, 0.3, 1.2, "#172b3b", 0, 0.15, 0, g);
       this.box(1.1, 1.35, 0.9, "#38536a", 0, 0.85, 0, g);
       this.box(0.8, 0.55, 0.06, "#102438", 0, 1.23, 0.48, g);
-      this.box(0.6, 0.11, 0.08, "#f1aa65", 0, 1.25, 0.53, g, true);
+      this.box(0.6, 0.28, 0.08, "#65d5d4", 0, 1.25, 0.53, g, true);
+      for (let n=0;n<3;n++) this.box(.46,.018,.01,"#143b4b",0,1.18+n*.06,.577,g);
       this.cylinder(0.16, 0.25, "#dbc686", 0, 1.7, 0, g);
       this.ring(1.7, 0.05, "#b37b55", 0, 0.06, 0, g);
       const l = this.label("RELAY 0" + (i + 1), "#ecc888", 2.6);
       l.position.set(0, 2.4, 0);
       g.add(l);
+      g.userData.screen = g.children[3];
+      g.userData.label = l;
+      this.glowDisc(1.5, "#35d4e4", p.x, p.z);
       this.terminals.push(g);
     });
     this.core.position.set(CORE.x, 1.7, CORE.z);
@@ -375,10 +391,18 @@ export class Battlefield {
     this.core.add(cage);
     this.cylinder(1.05, 1.2, "#43546a", CORE.x, 0.6, CORE.z);
     this.ring(1.15, 0.08, "#a289e9", CORE.x, 1.23, CORE.z);
+    this.glowDisc(4, "#9251e6", CORE.x, CORE.z);
     this.exfil.position.set(EXTRACTION.x, 0, EXTRACTION.z);
     this.scene.add(this.exfil);
     this.ring(2.7, 0.12, "#5ccca8", 0, 0.07, 0, this.exfil);
     this.ring(2.35, 0.035, "#79b5b0", 0, 0.075, 0, this.exfil);
+    this.glowDisc(4, "#36e7b1", EXTRACTION.x, EXTRACTION.z);
+    for (const x of [-2.2,2.2]) for (const z of [-1.9,1.9]) {
+      this.box(.2,1.1,.2,"#3c5261",x,.55,z,this.exfil);
+      this.box(.16,.28,.18,"#8deac1",x,1.02,z,this.exfil,true);
+    }
+    const arrow = new THREE.Shape(); arrow.moveTo(-.75,-.1); arrow.lineTo(-.2,-.1); arrow.lineTo(-.2,-.8); arrow.lineTo(.2,-.8); arrow.lineTo(.2,-.1); arrow.lineTo(.75,-.1); arrow.lineTo(0,.7); arrow.closePath();
+    const arrowMesh = new THREE.Mesh(new THREE.ShapeGeometry(arrow), this.material("#72ffd0",true)); arrowMesh.rotation.x=-Math.PI/2; arrowMesh.position.y=.08; this.exfil.add(arrowMesh);
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
       this.box(
@@ -431,6 +455,8 @@ export class Battlefield {
       this.box(0.07, 0.035, 1.7, "#789c9e", -8, 0.04, z);
     for (let x = -21; x < 22; x += 4)
       this.box(1.8, 0.035, 0.06, "#866f49", x, 0.04, 10);
+    this.detailLevel();
+    this.batchArchitecture();
     this.camera.position.set(21, 29, 30);
     this.camera.lookAt(0, 0, -2);
   }
@@ -439,7 +465,7 @@ export class Battlefield {
       c = COLORS[color];
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.35, 0.48, 4, 8),
-      this.material("#1c2739").clone(),
+      this.material("#263447").clone(),
     );
     body.position.y = 0.9;
     body.castShadow = true;
@@ -448,17 +474,19 @@ export class Battlefield {
     this.box(0.34, 0.08, 0.05, "#bceae3", 0, 1.11, 0.4, g, true);
     this.box(0.56, 0.12, 0.44, "#0d1929", 0, 0.59, 0, g);
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.29, 12, 8),
-      this.material("#748c9b"),
+      new THREE.SphereGeometry(0.34, 16, 12),
+      this.material(c, false, .7),
     );
     head.scale.y = 1.05;
     head.position.y = 1.48;
     head.castShadow = true;
     g.add(head);
-    this.box(0.49, 0.12, 0.24, "#102238", 0, 1.5, 0.18, g);
+    this.box(0.56, 0.19, 0.3, "#071a2b", 0, 1.5, 0.18, g);
     this.box(0.38, 0.035, 0.05, c, 0, 1.51, 0.32, g, true);
     this.box(0.22, 0.4, 0.2, c, -0.44, 1.07, 0, g);
     this.box(0.22, 0.4, 0.2, c, 0.44, 1.07, 0, g);
+    this.box(.44,.48,.24,"#152638",0,1.04,-.28,g);
+    this.box(.31,.06,.04,c,0,1.19,-.42,g,true);
     const legL = this.box(0.2, 0.52, 0.24, "#25384c", -0.2, 0.32, 0, g),
       legR = this.box(0.2, 0.52, 0.24, "#25384c", 0.2, 0.32, 0, g);
     this.box(0.25, 0.16, 0.38, "#132132", -0.2, 0.08, 0.08, g);
@@ -483,15 +511,102 @@ export class Battlefield {
       target: new THREE.Vector3(),
     };
   }
-  private drone(heavy: boolean) {
+  private glowDisc(radius: number, color: string, x: number, z: number) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(radius*2,radius*2), new THREE.MeshBasicMaterial({map:this.glow,color,transparent:true,opacity:.34,blending:THREE.AdditiveBlending,depthWrite:false}));
+    m.rotation.x=-Math.PI/2; m.position.set(x,.035,z); this.scene.add(m);
+  }
+  private detailLevel() {
+    // Modular bulkheads, warm wall lamps, conduits and floor seams mirror the concept art.
+    this.box(50,2.6,.5,"#17273d",0,4.4,-20.1);
+    for (let x=-22.5;x<=22.5;x+=5) {
+      this.box(4.75,4.8,.12,"#263c53",x,2.7,-19.94);
+      this.box(4.5,.13,.15,"#526072",x,1.5,-19.83);
+      this.box(4.5,.13,.15,"#526072",x,4.8,-19.83);
+      this.box(.3,5.8,.65,"#304253",x-2.4,2.8,-19.75);
+      this.box(1.3,.18,.18,"#efc16e",x,.65,-19.7,this.scene,true);
+    }
+    for (const side of [-1,1]) for (let z=-15;z<19;z+=4) {
+      this.box(.14,.65,3.6,"#30445d",side*24.94,2.1,z);
+      this.box(.22,.12,3.5,"#b39456",side*24.8,1.25,z);
+      this.box(.25,.7,.44,"#bca16b",side*24.8,2.5,z);
+      this.box(.29,.47,.22,"#ffe5ac",side*24.62,2.5,z,this.scene,true);
+    }
+    // A pair of slim pipes and regularly spaced clamps stay inside the outer walls.
+    for (const y of [.48,.76]) this.box(48,.09,.09,"#647385",0,y,-19.65);
+    for (let x=-22;x<24;x+=2) this.box(.08,.46,.12,"#223346",x,.6,-19.57);
+    for (let x=-22;x<=22;x+=6) for (let z=-16;z<=16;z+=8) {
+      this.box(.35,.018,.055,"#baa56e",x,.014,z);
+      this.box(.055,.019,.35,"#baa56e",x,.015,z);
+    }
+    for (let i=0;i<12;i++) {
+      const x=-5.2+i*.95;
+      const stripe=this.box(.45,.025,.75,"#bd9e55",x,.016,-7.6); stripe.rotation.y=-.45;
+    }
+    for (const x of [-3.5,3.5]) {
+      this.box(.18,4.7,.24,"#b39860",x,2.3,-8.3);
+      this.box(.07,3.5,.08,"#ffe6ac",x,2.5,-8.14,this.scene,true);
+    }
+    // Raised segmented pedestal and a purple light pool make the core a focal point.
+    for(let i=0;i<8;i++) { const a=i/8*Math.PI*2; this.box(.24,.3,.24,"#b8a281",CORE.x+Math.cos(a)*1.3,.18,CORE.z+Math.sin(a)*1.3); }
+  }
+  private batchArchitecture() {
+    // Merge immovable pieces by material: extra art should not cost hundreds of draw calls.
+    this.scene.updateMatrixWorld(true);
+    const batches = new Map<THREE.Material, { meshes: THREE.Mesh[]; geometries: THREE.BufferGeometry[] }>();
+    const collect = (o: THREE.Object3D) => {
+      if (!(o instanceof THREE.Mesh) || Array.isArray(o.material)) return;
+      let batch=batches.get(o.material); if(!batch) { batch={meshes:[],geometries:[]}; batches.set(o.material,batch); }
+      const g=o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      g.applyMatrix4(o.matrixWorld); batch.meshes.push(o); batch.geometries.push(g);
+    };
+    for(const child of [...this.scene.children]) {
+      if(child instanceof THREE.Mesh) collect(child);
+      else if(child.userData.static) child.traverse(collect);
+    }
+    for(const [material,batch] of batches) {
+      if(batch.meshes.length<2) { batch.geometries.forEach(g=>g.dispose()); continue; }
+      const geometry=mergeGeometries(batch.geometries,false);
+      batch.geometries.forEach(g=>g.dispose());
+      if(!geometry) continue;
+      const merged=new THREE.Mesh(geometry,material); merged.receiveShadow=true; merged.castShadow=!(material instanceof THREE.MeshBasicMaterial); this.scene.add(merged);
+      for(const mesh of batch.meshes) { mesh.removeFromParent(); mesh.geometry.dispose(); }
+    }
+  }
+  private renderHazards(w: World, t: number) {
+    const ids=new Set(w.hazards.map(h=>h.id));
+    for(const [id,g] of this.hazards) if(!ids.has(id)) { this.removeRig(g); this.hazards.delete(id); }
+    for(const hazard of w.hazards) {
+      let g=this.hazards.get(hazard.id);
+      if(!g) {
+        g=new THREE.Group(); g.position.set(hazard.x,.045,hazard.z);
+        const fill=new THREE.Mesh(new THREE.CircleGeometry(hazard.radius,48),new THREE.MeshBasicMaterial({color:"#ff452e",transparent:true,opacity:.12,depthWrite:false}));
+        fill.rotation.x=-Math.PI/2; fill.userData.ownedMaterial=true; g.add(fill);
+        this.ring(hazard.radius,.065,"#ff7a50",0,.012,0,g);
+        this.box(hazard.radius*1.3,.025,.035,"#ff9e61",0,.014,0,g,true);
+        this.box(.035,.025,hazard.radius*1.3,"#ff9e61",0,.015,0,g,true);
+        const beam=new THREE.Mesh(new THREE.CylinderGeometry(hazard.radius*.7,hazard.radius,7,24,1,true),new THREE.MeshBasicMaterial({color:"#ff794a",transparent:true,opacity:.17,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+        beam.position.y=3.5; beam.visible=false; beam.userData.ownedMaterial=true; g.add(beam);
+        g.userData.fill=fill; g.userData.beam=beam;
+        this.scene.add(g); this.hazards.set(hazard.id,g);
+      }
+      const progress=Math.min(1,(w.time-hazard.born)/hazard.delay);
+      const fill=g.userData.fill as THREE.Mesh<THREE.CircleGeometry,THREE.MeshBasicMaterial>;
+      fill.material.opacity=hazard.hit?.65:.1+progress*.13+Math.sin(t*19)*.05;
+      (g.userData.beam as THREE.Mesh).visible=hazard.hit;
+    }
+  }
+  private drone(heavy: boolean, hunter = false) {
     const g = new THREE.Group(),
       radius = heavy ? 0.62 : 0.44;
     const body = new THREE.Mesh(
       new THREE.IcosahedronGeometry(radius, 1),
-      this.material(heavy ? "#70534a" : "#62586d"),
+      this.material(heavy ? "#70504b" : hunter ? "#9c7050" : "#3a4d66"),
     );
     body.castShadow = true;
     g.add(body);
+    const eye = new THREE.Mesh(new THREE.TorusGeometry(radius*.42,.045,8,16),this.material("#ffb44c",true)); eye.position.set(0,0,radius*.95); g.add(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(radius*.22,12,8),this.material("#ffe1a3",true)); pupil.position.set(0,0,radius*1.03); g.add(pupil);
+    if (hunter) { g.scale.set(.8,.8,1.15); this.box(.28,.15,.3,"#ffb755",0,0,-.5,g,true); }
     this.box(
       radius * 1.3,
       0.14,
@@ -536,12 +651,17 @@ export class Battlefield {
     const w = this.canvas.clientWidth || innerWidth,
       h = this.canvas.clientHeight || innerHeight;
     this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w,h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
   private removeRig(group: THREE.Group) {
     group.traverse((o) => {
-      if (o instanceof THREE.Mesh) o.geometry.dispose();
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        if(o.userData.ownedMaterial && !Array.isArray(o.material)) o.material.dispose();
+      }
+      if(o instanceof THREE.Sprite) { o.material.map?.dispose(); o.material.dispose(); const i=this.labels.indexOf(o); if(i>=0)this.labels.splice(i,1); }
     });
     this.scene.remove(group);
   }
@@ -561,14 +681,14 @@ export class Battlefield {
         new THREE.Vector3(self.x, 0, self.z),
         1 - Math.exp(-dt * 7),
       );
-      this.camera.position.copy(this.follow).add(new THREE.Vector3(16, 26, 21));
+      this.camera.position.copy(this.follow).add(new THREE.Vector3(13, 20, 17));
       this.camera.lookAt(this.follow.x, 0, this.follow.z - 1.4);
     } else {
-      const a = this.reducedMotion ? 0 : t * 0.025;
+      const a = this.reducedMotion ? 0 : Math.sin(t*.055)*.12;
       this.camera.position.set(
-        Math.sin(a + 0.43) * 38,
+        21 + Math.sin(a)*8,
+        27,
         30,
-        Math.cos(a + 0.43) * 31,
       );
       this.camera.lookAt(0, 0.2, -3);
     }
@@ -584,6 +704,7 @@ export class Battlefield {
       if (!rig) {
         rig = this.operative(p.color);
         rig.group.position.set(p.x, 0, p.z);
+        rig.label = this.label(p.name.toUpperCase(),COLORS[p.color],Math.min(3, 1.2+p.name.length*.06)); rig.label.position.set(0,2.35,0); rig.group.add(rig.label);
         this.actors.set(p.id, rig);
       }
       let tx = p.x,
@@ -612,6 +733,7 @@ export class Battlefield {
         p.hurt > 4.3 ? "#8b3524" : "#000000",
       );
       rig.group.visible = active || p.id === w.players[0].id;
+      if (rig.label) rig.label.visible = active;
     }
     const enemies = new Set(w.enemies.map((e) => e.id));
     for (const [id, g] of this.enemies)
@@ -622,7 +744,7 @@ export class Battlefield {
     for (const e of w.enemies) {
       let g = this.enemies.get(e.id);
       if (!g) {
-        g = this.drone(e.type === "heavy");
+        g = this.drone(e.type === "heavy", e.type === "hunter");
         g.position.set(e.x, 1.3, e.z);
         this.enemies.set(e.id, g);
       }
@@ -663,8 +785,8 @@ export class Battlefield {
     for (let i = 0; i < this.terminals.length; i++) {
       const g = this.terminals[i],
         r = w.relays[i];
-      g.children[g.children.length - 1].visible = !r.done;
-      const screen = g.children[3] as THREE.Mesh;
+      (g.userData.label as THREE.Sprite).visible = !r.done;
+      const screen = g.userData.screen as THREE.Mesh;
       screen.material = this.material(r.done ? "#65d5b1" : "#d2a365", true);
     }
     const carrier = w.players.find((p) => p.id === w.core.carrier);
@@ -729,7 +851,9 @@ export class Battlefield {
       this.reticle.position.copy(this.aimTarget);
       this.reticle.visible = true;
     } else this.reticle.visible = false;
-    this.renderer.render(this.scene, this.camera);
+    this.renderHazards(w, t);
+    if (this.composer) this.composer.render(dt);
+    else this.renderer.render(this.scene, this.camera);
   }
   dispose() {
     this.observer.disconnect();
@@ -747,6 +871,10 @@ export class Battlefield {
     });
     this.bulletGeometry.dispose();
     this.particleGeometry.dispose();
+    this.glow.dispose();
+    this.textures.forEach((t) => t.dispose());
+    this.composer?.passes.forEach((p) => p.dispose?.());
+    this.composer?.dispose();
     this.renderer.dispose();
   }
 }

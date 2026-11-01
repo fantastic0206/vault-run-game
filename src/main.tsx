@@ -2,6 +2,8 @@ import {
   useEffect,
   useRef,
   useState,
+  Component,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
@@ -48,6 +50,9 @@ import {
   vaultOpen,
 } from "./game/simulation";
 import { COLORS, type Room, type Session, type World } from "./game/types";
+import type { Difficulty } from "./game/types";
+import { DIFFICULTIES, EXTRACT_SECONDS, HACK_SECONDS } from "./game/balance";
+import { graphicsQuality } from "./game/art";
 import { CrewLink, NetworkError, roomApi } from "./network";
 import "./style.css";
 
@@ -88,8 +93,8 @@ function Logo({ small = false }: { small?: boolean }) {
       <span className="logo-mark">
         <Gem size={small ? 19 : 23} />
       </span>
-      <span>
-        VAULT <b>BREACH</b>
+      <span className="logo-wordmark">
+        <span>VAULT</span><b>BREACH</b>
         <small>AFTER HOURS. OVER YOUR HEAD.</small>
       </span>
     </div>
@@ -115,6 +120,8 @@ function App() {
   const [error, setError] = useState(""),
     [connectionError, setConnectionError] = useState(""),
     [webglError, setWebglError] = useState("");
+  const [runtimeError, setRuntimeError] = useState("");
+  const [difficulty, setDifficulty] = useState<Difficulty>("lockdown");
   const [busy, setBusy] = useState(false),
     busyRef = useRef(false),
     [paused, setPaused] = useState(false),
@@ -140,6 +147,7 @@ function App() {
     )
       return;
     roomRef.current = next;
+    setDifficulty(next.difficulty);
     setRoom(next);
     if (next.phase === "lobby") {
       if (runtime.current?.multiplayer) runtime.current.menu();
@@ -173,8 +181,17 @@ function App() {
         input: (input) => link.current?.input(game.gameId, input),
         frame: (world) => link.current?.world(game.gameId, world),
         outcome: (world) => callbacks.current.outcome(world),
+        fault: (message) => {
+          setRuntimeError(message);
+          link.current?.close();
+          liveRef.current = false;
+          setLive(false);
+        },
       };
+      const lost = (event: Event) => { event.preventDefault(); game.menu(); game.callbacks.fault("The graphics connection was lost. Reload with low graphics to rejoin safely."); };
+      canvas.current!.addEventListener("webglcontextlost", lost);
       return () => {
+        canvas.current?.removeEventListener("webglcontextlost", lost);
         game.dispose();
         runtime.current = null;
       };
@@ -191,13 +208,14 @@ function App() {
       room: (r, w) => {
         if (active) callbacks.current.acceptRoom(r, w);
       },
-      world: (w) => runtime.current?.remoteFrame(w),
-      input: (id, input) => runtime.current?.remoteInput(id, input),
-      status: (connected, message) => {
+      world: (gameId, w) => { if (active) runtime.current?.remoteFrame(gameId, w); },
+      input: (gameId, id, input, stream) => { if (active) runtime.current?.remoteInput(gameId, id, input, stream); },
+      status: (connected, message, terminal) => {
         if (active) {
           liveRef.current = connected;
           setLive(connected);
           setConnectionError(message);
+          if (terminal) setError(message);
           if (connected) void sync();
         }
       },
@@ -278,6 +296,7 @@ function App() {
     liveRef.current = false;
     link.current?.close();
     setConnectionError("");
+    setRuntimeError("");
     history.replaceState(null, "", location.pathname);
   }
   function solo() {
@@ -291,7 +310,7 @@ function App() {
     try {
       localStorage.setItem("vault-breach-name", name);
     } catch {}
-    runtime.current?.solo(name.trim() || "Rook");
+    runtime.current?.solo(name.trim() || "Rook", difficulty);
     setPage("game");
     setPaused(false);
     setToast("MISSION LIVE · Disable the three security relays.");
@@ -302,13 +321,14 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      const result = await roomApi({ type, name: name.trim(), code });
+      const result = await roomApi({ type, name: name.trim(), code, difficulty });
       const s = {
         code: result.room.code,
         token: result.token!,
         id: result.id!,
       };
       saveSeat(s);
+      seatRef.current = s;
       setSeat(s);
       setRoom(result.room);
       roomRef.current = result.room;
@@ -338,6 +358,7 @@ function App() {
       if (type === "leave") clearCrew();
       else callbacks.current.acceptRoom(result.room);
     } catch (e) {
+      if (type === "leave") clearCrew();
       setError((e as Error).message);
     } finally {
       busyRef.current = false;
@@ -384,6 +405,8 @@ function App() {
           disabled={!!webglError}
           soundOn={soundOn}
           toggleSound={toggleSound}
+          difficulty={difficulty}
+          setDifficulty={setDifficulty}
         />
       )}
       {page === "lobby" && (
@@ -428,7 +451,8 @@ function App() {
                   COPY INVITE
                 </button>
               </div>
-              <MissionBrief />
+              <DifficultySelect value={room?.difficulty ?? difficulty} onChange={(difficulty) => void perform("difficulty", { difficulty })} disabled={busy || room?.hostId !== currentId} />
+              <MissionBrief difficulty={room?.difficulty ?? difficulty} />
               <p className="lobby-note">
                 <Shield size={13} />
                 The host runs the mission. Keep the host’s game open while
@@ -532,10 +556,10 @@ function App() {
           {hud.status === "playing" && !paused && (
             <TouchControls runtime={runtime.current} />
           )}{" "}
-          {seat && !live && (
+          {seat && (!live || connectionError || runtime.current?.awaitingFrame) && (
             <div className="network-banner">
               <WifiOff size={14} />
-              {connectionError || "Reconnecting to the crew…"}
+              {connectionError || (runtime.current?.awaitingFrame ? "Synchronizing mission with the squad lead…" : "Reconnecting to the crew…")}
             </div>
           )}
           {hud.status === "playing" && paused && (
@@ -661,7 +685,8 @@ function App() {
           <p>{webglError}</p>
         </div>
       )}
-      {rules && <Manual close={() => setRules(false)} />}
+      {runtimeError && <div className="modal-shade recovery-shade"><section className="pause-panel"><span className="eyebrow">OPERATIVE RECOVERY</span><h2>LET’S GET YOU BACK.</h2><p>{runtimeError}</p><button className="button primary full" onClick={() => { try { localStorage.setItem("vault-breach-quality", "low"); } catch {} location.reload(); }}>RELOAD WITH LOW GRAPHICS <RotateCcw size={16}/></button><button className="text-button full" onClick={exitMission}>RETURN TO BASE</button></section></div>}
+      {rules && <Manual difficulty={difficulty} close={() => setRules(false)} />}
       {toast && (
         <div className="toast" role="status">
           <Check size={15} />
@@ -672,7 +697,10 @@ function App() {
   );
 }
 
-function MissionBrief() {
+function DifficultySelect({ value, onChange, disabled = false }: { value: Difficulty; onChange: (value: Difficulty) => void; disabled?: boolean }) {
+  return <div className="difficulty-select"><span className="eyebrow">THREAT LEVEL</span><div role="group" aria-label="Mission difficulty">{(Object.keys(DIFFICULTIES) as Difficulty[]).map((key, i) => <button key={key} aria-pressed={value === key} disabled={disabled} className={value === key ? "selected" : ""} onClick={() => onChange(key)}><span>{Array.from({length:i+1}, (_, n) => <i key={n}/>)}</span>{DIFFICULTIES[key].name}</button>)}</div><p>{DIFFICULTIES[value].subtitle}</p></div>;
+}
+function MissionBrief({ difficulty = "lockdown" }: { difficulty?: Difficulty }) {
   return (
     <div className="mission-brief">
       <div>
@@ -680,7 +708,7 @@ function MissionBrief() {
         <Target size={17} />
         <p>
           <strong>DISABLE SECURITY</strong>
-          <small>Find and hack all 3 relays. Hold E nearby.</small>
+          <small>Clear each relay. Hold still + E for {HACK_SECONDS(difficulty)}s.</small>
         </p>
       </div>
       <div>
@@ -697,7 +725,7 @@ function MissionBrief() {
         <p>
           <strong>MAKE THE GETAWAY</strong>
           <small>
-            Bring the core to extraction. Hold position for 2 seconds.
+            Clear extraction. Defend the core for {EXTRACT_SECONDS(difficulty)} seconds.
           </small>
         </p>
       </div>
@@ -715,6 +743,8 @@ function Home({
   disabled,
   soundOn,
   toggleSound,
+  difficulty,
+  setDifficulty,
 }: {
   name: string;
   setName: (n: string) => void;
@@ -726,6 +756,8 @@ function Home({
   disabled: boolean;
   soundOn: boolean;
   toggleSound: () => void;
+  difficulty: Difficulty;
+  setDifficulty: (value: Difficulty) => void;
 }) {
   const invite = new URLSearchParams(location.search).get("room") ?? "";
   const [mode, setMode] = useState<"create" | "join">(
@@ -742,6 +774,7 @@ function Home({
       <header className="menu-header">
         <Logo />
         <div>
+          <button className="text-button graphics-button" disabled={busy} onClick={() => { try { localStorage.setItem("vault-breach-quality", graphicsQuality() === "low" ? "high" : "low"); location.reload(); } catch {} }}>GRAPHICS: {graphicsQuality().toUpperCase()}</button>
           <button
             className="text-button"
             onClick={toggleSound}
@@ -769,11 +802,7 @@ function Home({
             <br />
             <em>EXTRACT.</em>
           </h1>
-          <p>
-            The night shift has drones.
-            <br />
-            You have a blaster and questionable judgment.
-          </p>
+          <p>Disable security. Seize the core.<br />Make your getaway.</p>
           <div className="hero-actions">
             <button
               className="button primary big"
@@ -789,6 +818,7 @@ function Home({
               LEARN THE ROPES
             </button>
           </div>
+          <DifficultySelect value={difficulty} onChange={setDifficulty} disabled={busy} />
           <div className="hero-tags">
             <span>
               <Crosshair size={13} />
@@ -908,7 +938,7 @@ function Home({
             THE CONTRACT
             <span />
           </div>
-          <MissionBrief />
+          <MissionBrief difficulty={difficulty} />
           <p className="card-footnote">
             {SOLO_PREVIEW ? (
               <>
@@ -932,7 +962,7 @@ function Home({
           GET IN. GET OUT. GET RICH.
         </span>
         <span>WASD TO MOVE · MOUSE TO AIM · SPACE TO DASH</span>
-        <span>BUILT FOR THE BROWSER</span>
+        <span>V1.1 · LOCKDOWN UPDATE</span>
       </footer>
     </div>
   );
@@ -1096,6 +1126,7 @@ function GameHUD({
           <span className="live-indicator" />
           {room ? "ROOM " + room : "SOLO OPERATION"}
         </span>
+        <div className="threat-readout"><span>{DIFFICULTIES[world.difficulty].name}</span><b>SECURITY ALERT {Math.min(5, 1 + done + (carrier ? 1 : 0))}</b><div>{[0,1,2,3,4].map((n) => <i key={n} className={n < 1 + done + (carrier ? 1 : 0) ? "lit" : ""}/>)}</div></div>
         <div className="objective-list">
           <span>THE CONTRACT</span>
           <p className={done === 3 ? "complete" : "active"}>
@@ -1136,6 +1167,7 @@ function GameHUD({
           ))}
         </div>
       </div>
+      {world.hazards.some((h) => !h.hit && Math.hypot(h.x - self.x, h.z - self.z) < h.radius + 1) && <div className="strike-warning"><Target size={17}/><strong>SECURITY STRIKE</strong><span>MOVE OUT OF THE RED ZONE</span></div>}
       <div className="hud-right">
         <MiniMap world={world} selfId={selfId} />
         <div className="hud-tools">
@@ -1184,7 +1216,7 @@ function GameHUD({
         <div>
           <strong>{self.ammo.toString().padStart(2, "0")}</strong>
           <i>/ ∞</i>
-          <Crosshair size={24} />
+          <svg className="weapon-silhouette" viewBox="0 0 100 45" aria-hidden="true"><path d="M3 14h22V8h25l4 6h29v5h14v6H78l-5 6H56l-4 13H41l2-15H26l-8 9H7l10-17H3z" fill="currentColor"/><path d="M30 10h15v3H30zM57 17h18v3H57z" fill="#0c2536"/></svg>
         </div>
         <p>
           {self.reload > 0
@@ -1346,7 +1378,7 @@ function TouchControls({ runtime }: { runtime: Runtime | null }) {
     </div>
   );
 }
-function Manual({ close }: { close: () => void }) {
+function Manual({ close, difficulty }: { close: () => void; difficulty: Difficulty }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
@@ -1374,7 +1406,7 @@ function Manual({ close }: { close: () => void }) {
         <br />
         <em>THE DRONES AREN’T.</em>
       </h2>
-      <MissionBrief />
+      <MissionBrief difficulty={difficulty} />
       <div className="control-table">
         {[
           ["WASD / ARROWS", "Move through the arena"],
@@ -1402,7 +1434,7 @@ function Manual({ close }: { close: () => void }) {
         Shields recharge after 4.5 seconds without taking damage. Green medkits
         restore health. Walls and crates block shots. Friendly fire is off. The
         mission ends if the whole crew goes down or the four-minute lockdown
-        expires.
+        expires. Hacking stops while moving or under fire, and decays when abandoned. Clear nearby enemies to hack and extract. Red floor marks warn of an incoming security strike: dash away before impact. The core triggers a final security surge.
       </p>
       <button className="button primary full" onClick={close}>
         I’M READY. LET’S GET LOUD.
@@ -1412,4 +1444,12 @@ function Manual({ close }: { close: () => void }) {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+class GameBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: Error) { console.error("Game interface stopped", error.message); }
+  render() {
+    return this.state.failed ? <div className="fatal-recovery"><Logo/><h1>CONNECTION LOST.<br/><em>CREW STILL OUT THERE.</em></h1><p>The interface hit an unexpected problem. Reload to reconnect to your mission.</p><button className="button primary" onClick={() => location.reload()}>RELOAD & REJOIN <RotateCcw size={17}/></button><button className="button secondary" onClick={() => { saveSeat(null); location.reload(); }}>JOIN A FRESH ROOM</button></div> : this.props.children;
+  }
+}
+createRoot(document.getElementById("root")!).render(<GameBoundary><App /></GameBoundary>);

@@ -109,7 +109,8 @@ export class Controls {
     let shoot = this.mouse.shoot,
       interact = has("KeyE") || this.interact,
       reload = has("KeyR") || this.reload;
-    const pad = navigator.getGamepads?.().find((p) => p?.connected);
+    let pad: Gamepad | null | undefined;
+    try { pad = navigator.getGamepads?.().find((p) => p?.connected); } catch { /* Embedded/mobile browsers can deny gamepad access. Other controls still work. */ }
     if (pad) {
       if (Math.hypot(pad.axes[0] ?? 0, pad.axes[1] ?? 0) > 0.16) {
         sx += pad.axes[0] ?? 0;

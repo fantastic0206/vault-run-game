@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EXTRACT_SECONDS, HACK_SECONDS } from "../src/game/balance.ts";
 import {
   createWorld,
   frame,
@@ -29,7 +30,9 @@ const seats = [
   { id: "p2", name: "Ghost", color: 1 },
 ];
 function world(count = 1) {
-  const w = createWorld(seats.slice(0, count));
+  const w = createWorld(seats.slice(0, count), 5347, "tactical");
+  w.enemies = [];
+  w.strikeTimer = 999;
   w.spawnTimer = 999;
   return w;
 }
@@ -209,7 +212,8 @@ test("relays need proximity and sustained interaction; all three open the vault"
   for (let i = 0; i < 3; i++) {
     Object.assign(w.players[0], { x: RELAYS[i].x, z: RELAYS[i].z + 1 });
     assert.equal(interactionHint(w, "p1")?.key, "E");
-    tick(w, 1.7, { interact: true });
+    tick(w, HACK_SECONDS(w.difficulty) + .1, { interact: true });
+    w.enemies = [];
   }
   assert.ok(vaultOpen(w));
   assert.ok(w.relays.every((r) => r.done));
@@ -219,13 +223,15 @@ test("a full mission can hack, collect the core, extract, and stop in a terminal
   safe(w);
   for (let i = 0; i < 3; i++) {
     Object.assign(w.players[0], { x: RELAYS[i].x, z: RELAYS[i].z + 1 });
-    tick(w, 1.7, { interact: true });
+    tick(w, HACK_SECONDS(w.difficulty) + .1, { interact: true });
+    w.enemies = [];
   }
   Object.assign(w.players[0], CORE);
   tick(w, 0.05, { interact: true });
   assert.equal(w.core.carrier, "p1");
   Object.assign(w.players[0], EXTRACTION);
-  tick(w, 2.1);
+  w.enemies = [];
+  tick(w, EXTRACT_SECONDS(w.difficulty) + .1);
   assert.equal(w.status, "won");
   assert.ok(w.reason.includes("Core secured"));
   const time = w.time;
@@ -290,7 +296,7 @@ test("medkits heal, disappear, and respawn", () => {
   assert.equal(w.pickups[0].active, false);
   p.x = -17;
   p.z = 15;
-  tick(w, 35.2);
+  tick(w, 55.2);
   assert.equal(w.pickups[0].active, true);
 });
 test("pathfinding routes drones around cover without entering solid cells", () => {

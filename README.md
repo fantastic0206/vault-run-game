@@ -1,6 +1,8 @@
-# Vault Breach 3D
+# Vault Breach 3D · v1.1 Lockdown Update
 
-A playable **3D action game** for one player or a private crew of **up to four players**. The game uses real-time Three.js geometry, lighting, shadows, animated operatives, drones, projectiles, and effects. It is a new action-game version of the Vault Run concept; it does not replace the earlier card game.
+A playable **3D action game** for one player or a private crew of **up to four players**. The game uses real-time Three.js geometry, lighting, shadows, animated operatives, drones, projectiles, and effects. The Lockdown Update improves guest reconnects, rebuilds the steel-and-gold art direction, and adds three difficulties with hunters and security strikes. See [CHANGELOG.md](CHANGELOG.md).
+
+**Updating an existing Vercel deployment:** replace its source with this version, keep your existing **REDIS_URL**, and redeploy. Every player must refresh; create a **new room** after the update. The home-screen footer reads **V1.1 · LOCKDOWN UPDATE**. The live endpoint reports version `1.1.0` and protocol `2`.
 
 ## Try it immediately
 
@@ -12,11 +14,19 @@ The standalone file intentionally disables co-op room creation. Use the complete
 
 You have **four minutes** to:
 
-1. Find and disable **all three security relays**. Stand close and hold **E**.
+1. Find and disable **all three security relays**. Clear nearby enemies, stand still close to the terminal, and hold **E**. Taking fire interrupts the hack; abandoned progress decays.
 2. Enter the open vault and press **E** near its glowing core to collect it.
-3. Carry the core back to the **green extraction zone** in the southwest corner and stay there for **two seconds**.
+3. Carry the core back to the **green extraction zone** in the southwest corner. Keep enemies away and defend the carrier for **4, 6, or 8 seconds**, depending on difficulty.
 
-Security drones pursue the crew and fire visible projectiles. Cover blocks both movement and shots. Disabling relays escalates security, and armored drones appear later in the mission. The core carrier moves slightly slower.
+Security is active when the raid starts. Fast hunters close the distance; armored drones fire three-shot spreads. Red targeting circles warn of security strikes: move or dash outside the marked radius before impact. Cover blocks movement and shots. Disabling relays escalates security, and taking the core triggers another wave. The core carrier moves slightly slower.
+
+| Difficulty | Relay hack | Extraction defense | Intended experience |
+| --- | --- | --- | --- |
+| Tactical | 3 seconds | 4 seconds | Learn the route and combat |
+| **Lockdown (default)** | **4.2 seconds** | **6 seconds** | Stronger armor, faster pursuit, frequent strikes |
+| Nightmare | 5 seconds | 8 seconds | Higher pressure, best with a coordinated crew |
+
+The host chooses one shared difficulty for a co-op room. Enemy counts and armor scale with crew size. There are at most 22 active enemies; medkits take 55 seconds to respawn.
 
 The crew wins together when the core is extracted. The mission fails if every operative is down or the lockdown timer reaches zero. A living teammate can hold E near a downed operative for two seconds to revive them. There is no friendly fire.
 
@@ -36,7 +46,9 @@ The crew wins together when the core is extracted. The mission fails if every op
 
 Your pulse carbine has a **14-round magazine** and unlimited reserve ammunition. Empty magazines reload automatically; manual reload takes 1.2 seconds. Dashes briefly protect against damage and recharge in 2.4 seconds. Shields recharge after 4.5 seconds without damage; green medkits restore health.
 
-Sound starts muted and can be enabled explicitly. The menu camera stops orbiting when reduced motion is requested. Solo pause freezes the simulation; co-op continues while the local menu is open.
+Sound starts muted and can be enabled explicitly. The menu camera stops orbiting when reduced motion is requested. Solo pause freezes the simulation; co-op continues while the local menu is open. Use **GRAPHICS: LOW** on the home screen for slower devices; it disables bloom, shadows, and antialiasing and limits pixel ratio. Low graphics is selected automatically for touch devices and devices reporting less than 6 GB RAM. A graphics failure offers a low-graphics reload.
+
+The environment now includes painted steel floor plates, reinforced gold-strapped crates, layered wall panels and lamps, a detailed vault assembly, floor light pools, gold/teal/purple/coral helmets, floating crew labels, bloom on high graphics, and framed combat panels. It follows the illustrated concepts' art direction; those illustrations were not captures of the running game.
 
 ## Run the complete project locally
 
@@ -59,7 +71,7 @@ See **[DEPLOY.md](DEPLOY.md)**. Solo works immediately after deploying the front
 
 This is a host-simulated casual co-op game. The host's browser runs the mission; the server authenticates room membership, accepts world frames only from the host, validates messages, and relays them across Function instances. Keep the host's game open and active. If the host is gone for approximately 18 seconds, the run ends and a connected player becomes squad lead so the crew can regroup. This is not a competitive anti-cheat server.
 
-The client automatically reconnects after a transport interruption or Function rotation. A host refresh can recover the latest stored world checkpoint, saved about once a second. On an unstable network, a small amount of progress can be replayed from that checkpoint.
+The client automatically reconnects after a transport interruption or Function rotation. A host refresh can recover the latest stored world checkpoint, saved about once a second. A refreshed guest receives a new authenticated input-stream ID, so its reset input and dash counters are accepted immediately. Guests wait for host state and reject mismatched missions, old builds, malformed frames, old input streams, and frames with a wrong roster. A departing guest remains in the running mission's fixed roster as downed, then is removed on regroup. On an unstable network, a small amount of progress can be replayed from the checkpoint.
 
 Redis and Vercel usage depend on active co-op traffic; the chosen plans' quotas apply. Solo generates no game-server traffic. Do not deploy only the static frontend and expect co-op rooms to work.
 
@@ -73,7 +85,9 @@ npm run demo
 
 Tests cover the complete hack–collect–extract mission, defeat conditions, combat, continuous collision, dashes, ammo, shields, revives, pickups, pathfinding, sustained simulation, input validation, room authorization, concurrency, and actual WebSocket traffic between two separate server instances with a shared relay. Checkpoint recovery and forged-client rejection are included.
 
-All **23 tests**, the production frontend build, and the standalone HTML build passed. Vercel's Node builder compiled both Functions, and the compiled room endpoint and WebSocket authentication passed a local smoke check without a TypeScript loader. The standalone JavaScript also passed syntax and self-containment checks.
+All **39 tests** pass. Tests include the actual client network class and mission runtime for one host plus three guests across two independent HTTP/WebSocket servers: guest refresh and immediate control recovery, a guest leaving, finish, and rematch. They also cover old input streams, malformed frames, subscription/start races, protocol mismatch, blocked gamepad permissions, error recovery, all difficulty levels, telegraphed strikes, contested hacking/extraction, and sustained four-player combat. Graphics and input-device adapters are stubbed in the runtime tests; these are not browser/GPU tests.
+
+The production frontend build, standalone HTML build, and compiled Vercel room and WebSocket authentication checks also pass.
 
 `npm run build` makes `dist/`. `npm run demo` regenerates the self-contained `PLAY-SOLO.html`. `npm run preview` runs the built frontend and the same server API locally.
 
@@ -85,6 +99,8 @@ The build workspace's preview service was unavailable. Browser appearance, WebGL
 src/game/simulation.ts   Host/solo simulation, combat, mission, victory/defeat
 src/game/map.ts          Arena, collision, visibility, pathfinding
 src/game/scene.ts        Procedural 3D environment, characters, effects, camera
+src/game/art.ts          Steel textures, glow textures, automatic graphics quality
+src/game/balance.ts      Shared difficulty settings and mission interaction times
 src/game/controls.ts     Keyboard, pointer, touch, and gamepad input
 src/game/runtime.ts      Fixed-interval gameplay and rendering/network hooks
 src/game/audio.ts        Optional synthesized sound effects

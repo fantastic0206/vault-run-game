@@ -7,7 +7,7 @@ import { attachLive } from "../server/live.ts";
 import { MemoryStorage, frameKey } from "../server/storage.ts";
 import { roomRequest } from "../server/rooms.ts";
 import { createWorld, frame, stepWorld } from "../src/game/simulation.ts";
-import { EMPTY_INPUT } from "../src/game/types.ts";
+import { PROTOCOL, EMPTY_INPUT } from "../src/game/types.ts";
 
 function next(
   ws: WebSocket,
@@ -42,7 +42,7 @@ async function connect(
   await once(ws, "open");
   const hello = next(ws, (m) => m.type === "hello");
   ws.send(
-    JSON.stringify({ type: "hello", code: seat.room.code, token: seat.token }),
+    JSON.stringify({ type: "hello", protocol: PROTOCOL, code: seat.room.code, token: seat.token }),
   );
   const data = await hello;
   return { ws, data };
@@ -175,6 +175,7 @@ test("WebSocket seats reject wrong credentials and malformed JSON without leakin
     bad.send(
       JSON.stringify({
         type: "hello",
+        protocol: PROTOCOL,
         code: host.room.code,
         token: "0".repeat(64),
       }),
@@ -193,4 +194,36 @@ test("WebSocket seats reject wrong credentials and malformed JSON without leakin
     live.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test("a mission started during subscription setup is included in the guest bootstrap", async()=>{
+  let release!:()=>void,subscribing!:()=>void;
+  const gate=new Promise<void>(r=>release=r),started=new Promise<void>(r=>subscribing=r);
+  class DelayedStorage extends MemoryStorage {
+    override async subscribe(channel:string,listener:(data:string)=>void) { subscribing();await gate;return super.subscribe(channel,listener); }
+  }
+  const store=new DelayedStorage(),server=createServer(),live=attachLive(server,store);
+  let ws:WebSocket|undefined;
+  try {
+    const url=await listen(server),host=await roomRequest({type:"create",name:"Lead"},"","ip",store);
+    ws=new WebSocket(url);await once(ws,"open");const hello=next(ws,m=>m.type==="hello");
+    ws.send(JSON.stringify({type:"hello",protocol:PROTOCOL,code:host.room.code,token:host.token}));
+    await started;
+    await roomRequest({type:"sync",code:host.room.code,live:true},host.token!,"ip",store);
+    const mission=await roomRequest({type:"start",code:host.room.code,live:true},host.token!,"ip",store);
+    release();const boot=await hello;
+    assert.equal(boot.room.phase,"playing");assert.equal(boot.room.gameId,mission.room.gameId);
+  } finally {release();ws?.terminate();live.close();await new Promise<void>(r=>server.close(()=>r()));}
+});
+
+test("old client builds receive a terminal refresh instruction instead of incompatible game frames",async()=>{
+  const store=new MemoryStorage(),server=createServer(),live=attachLive(server,store);
+  let ws:WebSocket|undefined;
+  try {
+    const url=await listen(server),host=await roomRequest({type:"create",name:"Lead"},"","ip",store);
+    ws=new WebSocket(url);await once(ws,"open");const rejected=next(ws,m=>m.type==="error");const closed=once(ws,"close");
+    ws.send(JSON.stringify({type:"hello",protocol:1,code:host.room.code,token:host.token}));
+    const response=await rejected;assert.equal(response.terminal,true);assert.match(response.error,/Refresh/);
+    assert.equal((await closed)[0],4409);
+  } finally {ws?.terminate();live.close();await new Promise<void>(r=>server.close(()=>r()));}
 });

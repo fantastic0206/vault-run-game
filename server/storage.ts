@@ -76,6 +76,7 @@ export class RedisStorage implements Storage {
   private redis: Redis;
   private subscriber: Redis;
   private listeners = new Map<string, Set<Listener>>();
+  private subscriptions = new Map<string, Promise<unknown>>();
   constructor(url: string) {
     const opts = {
       maxRetriesPerRequest: 1,
@@ -114,19 +115,23 @@ export class RedisStorage implements Storage {
     if (!set) {
       set = new Set();
       this.listeners.set(channel, set);
-      try {
-        await this.subscriber.subscribe(channel);
-      } catch (error) {
-        this.listeners.delete(channel);
-        throw error;
-      }
+      const previous = this.subscriptions.get(channel) ?? Promise.resolve();
+      this.subscriptions.set(channel, previous.catch(() => {}).then(() => this.subscriber.subscribe(channel)));
     }
     set.add(fn);
+    try { await this.subscriptions.get(channel); }
+    catch (error) {
+      set.delete(fn);
+      if (!set.size && this.listeners.get(channel) === set) { this.listeners.delete(channel); this.subscriptions.delete(channel); }
+      throw error;
+    }
     return () => {
       set!.delete(fn);
-      if (!set!.size) {
+      if (!set!.size && this.listeners.get(channel) === set) {
         this.listeners.delete(channel);
-        void this.subscriber.unsubscribe(channel).catch(() => {});
+        const pending = (this.subscriptions.get(channel) ?? Promise.resolve()).catch(() => {}).then(() => this.subscriber.unsubscribe(channel)).catch(() => {});
+        this.subscriptions.set(channel, pending);
+        void pending.then(() => { if (this.subscriptions.get(channel) === pending) this.subscriptions.delete(channel); });
       }
     };
   }

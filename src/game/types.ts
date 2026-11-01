@@ -43,7 +43,7 @@ export interface Enemy extends Vec2 {
   id: number;
   angle: number;
   hp: number;
-  type: "drone" | "heavy";
+  type: "drone" | "heavy" | "hunter";
   fire: number;
   path: Vec2[];
   pathTime: number;
@@ -73,8 +73,18 @@ export interface Effect extends Vec2 {
   t: number;
   kind: "hit" | "explosion" | "hack" | "heal" | "dash";
 }
+export type Difficulty = "tactical" | "lockdown" | "nightmare";
+export interface SecurityStrike extends Vec2 {
+  id: number;
+  born: number;
+  delay: number;
+  radius: number;
+  hit: boolean;
+}
+export const PROTOCOL = 2;
 export interface World {
   version: number;
+  difficulty: Difficulty;
   tick: number;
   time: number;
   status: "playing" | "won" | "lost" | "aborted";
@@ -85,6 +95,8 @@ export interface World {
   relays: Relay[];
   pickups: Pickup[];
   effects: Effect[];
+  hazards: SecurityStrike[];
+  strikeTimer: number;
   core: { x: number; z: number; carrier: string | null };
   nextId: number;
   spawnTimer: number;
@@ -102,6 +114,7 @@ export interface Seat {
   name: string;
   color: number;
   online: boolean;
+  left?: boolean;
 }
 export interface Room {
   code: string;
@@ -109,6 +122,7 @@ export interface Room {
   gameId: string;
   hostId: string;
   phase: "lobby" | "playing" | "finished";
+  difficulty: Difficulty;
   selfId: string;
   players: Seat[];
   result: "won" | "lost" | "aborted" | null;

@@ -1,4 +1,5 @@
-import { EMPTY_INPUT, type Input, type World } from "./types.js";
+import { EMPTY_INPUT, type Input, type Room, type World } from "./types.js";
+import { isDifficulty } from "./balance.js";
 export function sanitizeInput(value: unknown): Input | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
@@ -23,6 +24,10 @@ export function sanitizeInput(value: unknown): Input | null {
   };
 }
 export function validWorld(value: unknown, ids: string[]): value is World {
+  // All packets are untrusted, including cached frames from a previous deployment.
+  try { return checkWorld(value, ids); } catch { return false; }
+}
+function checkWorld(value: unknown, ids: string[]): value is World {
   if (!value || typeof value !== "object") return false;
   const w = value as World;
   const position = (p: unknown) =>
@@ -34,7 +39,9 @@ export function validWorld(value: unknown, ids: string[]): value is World {
         Math.abs((p as Record<string, number>)[k]) < 60,
     );
   return (
-    w.version === 1 &&
+    w.version === 2 &&
+    isDifficulty(w.difficulty) &&
+    ids.length > 0 && ids.length <= 4 &&
     Number.isFinite(w.time) &&
     w.time >= 0 &&
     w.time <= 241 &&
@@ -91,7 +98,7 @@ export function validWorld(value: unknown, ids: string[]): value is World {
         Array.isArray(e.path) &&
         e.path.length <= 100 &&
         e.path.every(position) &&
-        ["drone", "heavy"].includes(e.type),
+        ["drone", "heavy", "hunter"].includes(e.type),
     ) &&
     Array.isArray(w.bullets) &&
     w.bullets.length <= 200 &&
@@ -109,12 +116,14 @@ export function validWorld(value: unknown, ids: string[]): value is World {
     w.relays.every(
       (r) =>
         position(r) &&
+        Number.isInteger(r.id) && r.id >= 0 && r.id < 3 &&
         typeof r.done === "boolean" &&
         Number.isFinite(r.progress),
     ) &&
+    new Set(w.relays.map((r) => r.id)).size === 3 &&
     Array.isArray(w.pickups) &&
     w.pickups.length === 3 &&
-    w.pickups.every((p) => position(p) && typeof p.active === "boolean") &&
+    w.pickups.every((p) => position(p) && typeof p.active === "boolean" && Number.isFinite(p.respawn)) &&
     Array.isArray(w.effects) &&
     w.effects.length <= 40 &&
     w.effects.every(
@@ -124,6 +133,9 @@ export function validWorld(value: unknown, ids: string[]): value is World {
         Number.isFinite(e.id) &&
         ["hit", "explosion", "hack", "heal", "dash"].includes(e.kind),
     ) &&
+    Array.isArray(w.hazards) && w.hazards.length <= 8 &&
+    w.hazards.every((h) => position(h) && Number.isSafeInteger(h.id) && Number.isFinite(h.born) && Number.isFinite(h.delay) && h.delay > 0 && h.delay < 5 && Number.isFinite(h.radius) && h.radius > 0 && h.radius < 8 && typeof h.hit === "boolean") &&
+    Number.isFinite(w.strikeTimer) &&
     position(w.core) &&
     (w.core.carrier === null || ids.includes(w.core.carrier)) &&
     Number.isFinite(w.extraction) &&
@@ -132,4 +144,16 @@ export function validWorld(value: unknown, ids: string[]): value is World {
     Number.isFinite(w.seed) &&
     Number.isFinite(w.kills)
   );
+}
+export function validRoom(value: unknown): value is Room {
+  try {
+    const r = value as Room;
+    return !!r && typeof r === "object" && /^[A-Z2-9]{6}$/.test(r.code) && Number.isSafeInteger(r.version) && r.version > 0 &&
+      typeof r.gameId === "string" && r.gameId.length > 0 && r.gameId.length < 100 &&
+      typeof r.hostId === "string" && typeof r.selfId === "string" && isDifficulty(r.difficulty) &&
+      ["lobby", "playing", "finished"].includes(r.phase) && [null, "won", "lost", "aborted"].includes(r.result) &&
+      Array.isArray(r.players) && r.players.length <= 4 &&
+      new Set(r.players.map((p) => p.id)).size === r.players.length &&
+      r.players.every((p) => typeof p.id === "string" && p.id.length > 0 && p.id.length < 100 && typeof p.name === "string" && p.name.length > 0 && p.name.length <= 18 && Number.isInteger(p.color) && p.color >= 0 && p.color < 4 && typeof p.online === "boolean");
+  } catch { return false; }
 }

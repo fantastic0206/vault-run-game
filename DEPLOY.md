@@ -2,6 +2,13 @@
 
 This is a separate project from the earlier Vault Run card game. Deploy the **complete `vault-breach-3d` folder** from the ZIP. Do not upload only `PLAY-SOLO.html` or only `dist/` if you want co-op.
 
+## Upgrade an existing game to v1.1
+
+1. Replace the repository's game source with this release, including **api**, **server**, **src**, **tests**, both package files, and **vercel.json**. Keep your existing **REDIS_URL** in Vercel.
+2. Push the update or redeploy with `npx vercel --prod` from the updated folder. A dashboard redeploy of the old source will not install these fixes.
+3. Have **every player refresh the page**, then create a **fresh room**. v1.1 uses protocol 2 and intentionally rejects old client builds. The home-screen footer must say **V1.1 · LOCKDOWN UPDATE**. `/api/live` reports `version: "1.1.0"` and `protocol: 2`.
+4. Run the acceptance check below, including refreshing a guest during a mission. The old input-counter freeze and stale-rematch-frame handling have automated regression coverage.
+
 ## Fast solo check
 
 Open `PLAY-SOLO.html` after extracting the ZIP. No installation is required for solo play. If the browser reports that 3D graphics could not start, use a WebGL 2 capable browser with hardware acceleration enabled.
@@ -53,14 +60,16 @@ The standalone HTML can also be hosted as a solo-only static game. Multiplayer n
 
 1. Open the Production URL in a private browser session. Confirm the 3D arena renders and **Play Solo** starts immediately.
 2. Move with WASD, aim and fire, reload with R, and dash with Space. Shots must stop at crates. Escape must pause solo play. Resume it.
-3. Hack the three marked relays by standing close and holding E. The vault door must open after the third relay. Take the core with E and carry it to the green extraction circle for two seconds. Confirm a victory screen and a working retry button.
+3. Choose Tactical for the first acceptance run. Hack the three marked relays by clearing nearby enemies, standing still, and holding E for 3 seconds. The vault door must open after the third relay. Take the core with E and defend the green extraction circle for 4 seconds with no enemy within 5 units. Confirm a victory screen and a working retry button. On Lockdown, hack/extraction take 4.2/6 seconds; on Nightmare, 5/8.
 4. Return to the home screen. Enter the codename **Rook** and create a co-op room.
 5. Open its invite on a second physical device or independently opened browser session. Join as **Ghost**. Confirm that both screens show the same two-person crew and a live link.
 6. Start from the host's screen. Move the two operatives independently. Each device must see the other's movement and shots, and both must share enemy health and relay progress.
 7. Let one operative take damage. When downed, move the other close and hold E to revive. A team wipe must produce defeat for both players.
 8. Start another run. Complete all three relays together, collect the core, and extract. Both screens must show victory and the same total takedowns.
 9. Regroup in the lobby from the host's results screen. Confirm the same invitation code still works.
-10. Test refresh/reconnect: refresh one tab during a raid. The seat should restore. Host refresh should resume from its latest checkpoint. If the host stays disconnected for about 18 seconds, the run should end with a regroup message and a remaining player should become squad lead.
+10. Test refresh/reconnect: refresh a guest tab during a raid. The seat should restore, movement should respond as soon as the first host state arrives, and dash should work without waiting for old counters. Host refresh should resume from its latest checkpoint. If the host stays disconnected for about 18 seconds, the run should end with a regroup message and a remaining player should become squad lead.
+11. Have one guest leave during play. Other clients should continue, with the departed operative downed. On regroup, the departed seat must be removed. Start again with the remaining crew.
+12. Try Lockdown and Nightmare. Check hunter pursuit, armored enemies' three-shot spreads, security-strike warning circles and impacts, hack interruption/decay, and the need to clear extraction. Test **GRAPHICS: LOW** on a slower device.
 
 On phones, test both sticks and the ACT, DASH, and LOAD controls. On gamepads, test right-stick aim after moving the mouse at least once. Check frame rate on the devices your friends will actually use.
 
@@ -77,6 +86,9 @@ On phones, test both sticks and the ACT, DASH, and LOAD controls. On gamepads, t
 | The host switches away and the game slows                            | Keep the host's browser tab active. Browser background throttling affects the host simulation.                                                                                   |
 | The host leaves entirely                                             | The crew can regroup after the host timeout; a remaining player becomes squad lead. The project does not migrate an in-progress simulation between different players.            |
 | 3D graphics fail to start                                            | Use a current WebGL 2 browser and check hardware acceleration. Older WebGL 1-only browsers are unsupported.                                                                      |
+| Guest controls freeze after a refresh                                | Confirm all clients are running v1.1, refresh every page, and create a fresh room. New connections have independent input streams. |
+| A guest gets a refresh/version message                               | Frontend and server versions differ. Open the latest production URL, refresh, and create a new room. |
+| Frame rate is low or the graphics context is lost                     | Use **GRAPHICS: LOW** on the home screen, or the low-graphics reload on the recovery screen. |
 | `PLAY-SOLO.html` cannot create rooms                                 | Intentional: it is a self-contained solo preview. Use the complete deployment for co-op.                                                                                         |
 
 Official technical references: [Vercel WebSockets](https://vercel.com/docs/functions/websockets), [Vercel Marketplace storage](https://vercel.com/docs/marketplace-storage), [Upstash integration](https://vercel.com/marketplace/upstash), [Three.js WebGL renderer](https://threejs.org/docs/pages/WebGLRenderer.html).

@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import type { Room } from "../src/game/types.js";
+import { isDifficulty } from "../src/game/balance.js";
 import {
   ApiError,
   getStorage,
@@ -30,6 +31,7 @@ export interface PrivateRoom {
   phase: Room["phase"];
   players: PrivateSeat[];
   result: Room["result"];
+  difficulty: Room["difficulty"];
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 function name(value: unknown) {
@@ -71,14 +73,16 @@ export function publicRoom(
     hostId: r.hostId,
     phase: r.phase,
     result: r.result,
+    difficulty: isDifficulty(r.difficulty) ? r.difficulty : "lockdown",
     selfId,
     players: r.players
-      .filter((p) => !p.left)
+      .filter((p) => !p.left || r.phase !== "lobby")
       .map((p) => ({
         id: p.id,
         name: p.name,
         color: p.color,
-        online: now - p.seen < 18000 && (r.phase !== "playing" || p.live),
+        online: !p.left && now - p.seen < 18000 && (r.phase !== "playing" || p.live),
+        left: p.left,
       })),
   };
 }
@@ -158,6 +162,7 @@ export async function roomRequest(
             },
           ],
           result: null,
+          difficulty: isDifficulty(b.difficulty) ? b.difficulty : "lockdown",
         };
       if (await store.cas(roomKey(c), null, JSON.stringify(r), 21600))
         return { room: publicRoom(r, id, now), token, id };
@@ -232,6 +237,12 @@ export async function roomRequest(
     }
     if (p.id !== r.hostId)
       throw new ApiError("Only the host can control the mission.", 403);
+    if (type === "difficulty") {
+      if (r.phase !== "lobby") throw new ApiError("Choose difficulty in the lobby.", 409);
+      if (!isDifficulty(b.difficulty)) throw new ApiError("Choose a valid difficulty.");
+      r.difficulty = b.difficulty;
+      return;
+    }
     if (type === "start") {
       if (r.phase !== "lobby")
         throw new ApiError("The mission has already started.", 409);

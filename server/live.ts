@@ -1,6 +1,8 @@
 import { type Server } from "node:http";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { sanitizeInput, validWorld } from "../src/game/validate.js";
+import { PROTOCOL } from "../src/game/types.js";
 import {
   authenticate,
   publicRoom,
@@ -27,6 +29,7 @@ interface Connection {
   window: number;
   checkpoint: number;
   refresh: number;
+  stream: string;
 }
 export function attachLive(server: Server, provided?: Storage) {
   const wss = new WebSocketServer({
@@ -56,7 +59,8 @@ export function attachLive(server: Server, provided?: Storage) {
   });
   wss.on("connection", (ws) => {
     let connection: Connection | undefined,
-      authenticating = false;
+      authenticating = false,
+      ready = false;
     const timeout = setTimeout(() => {
       if (!connection) ws.close(4401, "Authenticate first.");
     }, 6000);
@@ -70,6 +74,11 @@ export function attachLive(server: Server, provided?: Storage) {
         const store = provided ?? getStorage();
         if (!connection) {
           if (authenticating || message.type !== "hello") return;
+          if (message.protocol !== PROTOCOL) {
+            send({ type: "error", terminal: true, error: "The game has updated. Refresh every player's page and create a fresh room." });
+            ws.close(4409, "Version mismatch");
+            return;
+          }
           authenticating = true;
           const room = await readRoom(store, String(message.code)),
             seat = authenticate(room, String(message.token));
@@ -85,6 +94,7 @@ export function attachLive(server: Server, provided?: Storage) {
             window: Date.now(),
             checkpoint: 0,
             refresh: Date.now(),
+            stream: randomUUID(),
           };
           const c = connection;
           c.unsubscribe = await store.subscribe(
@@ -100,10 +110,11 @@ export function attachLive(server: Server, provided?: Storage) {
                   };
                   // Token hashes stay private; fetch full membership on the next frame/control refresh.
                   c.refresh = 0;
-                  send({ ...packet, room: { ...packet.room, selfId: c.id } });
+                  if (ready) send({ ...packet, room: { ...packet.room, selfId: c.id } });
                 } else if (packet.type === "input" && packet.target === c.id)
-                  send(packet);
+                  { if (ready) send(packet); }
                 else if (
+                  ready &&
                   packet.type === "world" &&
                   packet.sender !== c.id &&
                   packet.gameId === c.room.gameId
@@ -114,10 +125,18 @@ export function attachLive(server: Server, provided?: Storage) {
               }
             },
           );
+          if (ws.readyState !== WebSocket.OPEN) { c.unsubscribe(); return; }
           connections.add(c);
           clearTimeout(timeout);
-          const world = await checkpoint(store, room.code, room.gameId);
-          send({ type: "hello", room: publicRoom(room, seat.id), world });
+          // A start/join can race the async Redis subscription. Bootstrap from current membership.
+          const latest = await readRoom(store, room.code);
+          authenticate(latest, c.token);
+          if (latest.version >= c.room.version) c.room = latest;
+          const cached = await checkpoint(store, room.code, c.room.gameId);
+          const world = validWorld(cached, c.room.players.map((p) => p.id)) ? cached : null;
+          if (ws.readyState !== WebSocket.OPEN) { c.unsubscribe(); connections.delete(c); return; }
+          ready = true;
+          send({ type: "hello", protocol: PROTOCOL, room: publicRoom(c.room, seat.id), world });
           return;
         }
         const c = connection,
@@ -130,6 +149,7 @@ export function attachLive(server: Server, provided?: Storage) {
           ws.close(4429, "Frame rate exceeded.");
           return;
         }
+        if (message.type === "ping") { send({ type: "pong" }); return; }
         if (now - c.refresh > 2500) {
           c.room = await readRoom(store, c.code);
           authenticate(c.room, c.token);
@@ -145,6 +165,7 @@ export function attachLive(server: Server, provided?: Storage) {
             JSON.stringify({
               type: "input",
               sender: c.id,
+              stream: c.stream,
               target: c.room.hostId,
               input,
               gameId: c.room.gameId,
@@ -180,6 +201,7 @@ export function attachLive(server: Server, provided?: Storage) {
       } catch (error) {
         send({
           type: "error",
+          terminal: error instanceof ApiError && [401, 404].includes(error.status),
           error:
             error instanceof ApiError
               ? error.message
