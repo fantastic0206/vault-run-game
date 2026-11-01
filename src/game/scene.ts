@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CORE, EXTRACTION, OBSTACLES, RELAYS, VENTS } from "./map";
+import { BOUNDS, CORE, DISTRICTS, EXTRACTION, OBSTACLES, PICKUPS, RELAYS, VENTS } from "./map";
 import { COLORS, type Input, type World } from "./types";
 import { steelFloor, glowTexture, graphicsQuality } from "./art";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -8,6 +8,8 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { WEAPONS, type WeaponId } from "./weapons";
+import { ENEMIES } from "./enemies";
+import { DIFFICULTIES } from "./balance";
 
 interface Rig {
   group: THREE.Group;
@@ -23,9 +25,10 @@ const v3 = new THREE.Vector3();
 export class Battlefield {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(44, 1, 0.1, 140);
+  camera = new THREE.PerspectiveCamera(44, 1, 0.1, 200);
   private clock = 0;
   private follow = new THREE.Vector3(-3, 0, 0);
+  private snapCamera = true;
   private actors = new Map<string, Rig>();
   private enemies = new Map<number, THREE.Group>();
   private bullets = new Map<number, THREE.Mesh>();
@@ -69,14 +72,14 @@ export class Battlefield {
     this.scene.fog = new THREE.FogExp2("#111c2b", 0.014);
     this.scene.add(new THREE.HemisphereLight("#a9c7ed", "#11182b", 1.15));
     const sun = new THREE.DirectionalLight("#ffe7b9", 3.2);
-    sun.position.set(-12, 28, 10);
+    sun.position.set(-25, 65, 20);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -32;
-    sun.shadow.camera.right = 32;
-    sun.shadow.camera.top = 28;
-    sun.shadow.camera.bottom = -28;
-    sun.shadow.camera.far = 75;
+    sun.shadow.camera.left = -62;
+    sun.shadow.camera.right = 62;
+    sun.shadow.camera.top = 52;
+    sun.shadow.camera.bottom = -52;
+    sun.shadow.camera.far = 160;
     sun.shadow.bias = -0.0003;
     sun.shadow.normalBias = 0.03;
     this.scene.add(sun);
@@ -208,17 +211,17 @@ export class Battlefield {
     return sprite;
   }
   private buildLevel() {
-    this.box(51, 0.7, 41, "#263244", 0, -0.5, 0);
+    this.box(BOUNDS.x * 2 + 1, .7, BOUNDS.z * 2 + 1, "#263244", 0, -0.5, 0);
     const floorMap = steelFloor(); this.textures.push(floorMap);
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(50,.12,40), new THREE.MeshStandardMaterial({map:floorMap, color:"#b3c6df", metalness:.62, roughness:.42}));
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(BOUNDS.x * 2,.12,BOUNDS.z * 2), new THREE.MeshStandardMaterial({map:floorMap, color:"#b3c6df", metalness:.62, roughness:.42}));
     floor.position.y = -.08; floor.receiveShadow = true; this.scene.add(floor);
-    this.box(51, 3.2, 0.8, "#1b293b", 0, 1.4, -20.4);
-    this.box(0.8, 2.4, 40, "#1c2b3e", -25.4, 1, 0);
-    this.box(0.8, 2.4, 40, "#1c2b3e", 25.4, 1, 0);
-    this.box(51, 0.55, 0.8, "#1c2938", 0, 0, 20.4);
-    for (const x of [-24.8, 24.8]) {
-      this.box(0.06, 0.1, 39, "#5a9ca8", x, 0.15, 0, this.scene, true);
-      for (let z = -18; z <= 18; z += 6) {
+    this.box(BOUNDS.x * 2 + 1, 3.2, .8, "#1b293b", 0, 1.4, -BOUNDS.z - .4);
+    this.box(.8, 2.4, BOUNDS.z * 2, "#1c2b3e", -BOUNDS.x - .4, 1, 0);
+    this.box(.8, 2.4, BOUNDS.z * 2, "#1c2b3e", BOUNDS.x + .4, 1, 0);
+    this.box(BOUNDS.x * 2 + 1, .55, .8, "#1c2938", 0, 0, BOUNDS.z + .4);
+    for (const x of [-BOUNDS.x + .2, BOUNDS.x - .2]) {
+      this.box(.06, .1, BOUNDS.z * 2 - 1, "#5a9ca8", x, 0.15, 0, this.scene, true);
+      for (let z = -BOUNDS.z + 2; z <= BOUNDS.z - 2; z += 6) {
         this.box(0.65, 3.6, 0.8, "#293951", x, 1.5, z);
         this.box(
           0.08,
@@ -233,7 +236,7 @@ export class Battlefield {
         );
       }
     }
-    this.box(49, 0.06, 0.05, "#82734a", 0, 0.04, -19.5, this.scene, true);
+    this.box(BOUNDS.x * 2 - 1, .06, .05, "#82734a", 0, .04, -BOUNDS.z + .5, this.scene, true);
     for (const o of OBSTACLES) {
       if (o.kind === "door") continue;
       const g = new THREE.Group();
@@ -435,11 +438,7 @@ export class Battlefield {
     );
     beam.position.y = 2.5;
     this.exfil.add(beam);
-    for (const p of [
-      { x: -8, z: 14 },
-      { x: 17, z: 0 },
-      { x: -15, z: -16 },
-    ]) {
+    for (const p of PICKUPS) {
       const g = new THREE.Group();
       g.position.set(p.x, 0.45, p.z);
       this.scene.add(g);
@@ -454,18 +453,22 @@ export class Battlefield {
         this.box(0.14, 0.11, 1.55, "#42566a", p.x - 0.65 + i * 0.33, 0.1, p.z);
     }
     // Ground chevrons and lit conduits establish readable paths through the arena.
-    for (let z = -16; z < 17; z += 4)
+    for (let z = -BOUNDS.z + 4; z < BOUNDS.z - 3; z += 4)
       this.box(0.07, 0.035, 1.7, "#789c9e", -8, 0.04, z);
-    for (let x = -21; x < 22; x += 4)
+    for (let x = -BOUNDS.x + 4; x < BOUNDS.x - 3; x += 4)
       this.box(1.8, 0.035, 0.06, "#866f49", x, 0.04, 10);
+    for (const district of DISTRICTS) {
+      const sign = this.label(district.name, "#76939f", 7);
+      sign.position.set(district.x, .2, district.z); this.scene.add(sign);
+    }
     this.detailLevel();
     this.batchArchitecture();
     this.camera.position.set(21, 29, 30);
     this.camera.lookAt(0, 0, -2);
   }
-  private operative(color: number): Rig {
+  private operative(color: number, tint?: string): Rig {
     const g = new THREE.Group(),
-      c = COLORS[color];
+      c = tint ?? COLORS[color];
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.35, 0.48, 4, 8),
       this.material("#263447").clone(),
@@ -502,6 +505,7 @@ export class Battlefield {
     flash.visible = false;
     g.add(flash);
     this.ring(0.57, 0.035, c, 0, 0.035, 0, g);
+    this.batchRig(g, [body, legL, legR, flash]);
     this.scene.add(g);
     return {
       group: g,
@@ -510,6 +514,20 @@ export class Battlefield {
       flash,
       target: new THREE.Vector3(),
     };
+  }
+  private batchRig(group: THREE.Group, animated: THREE.Object3D[]) {
+    const batches = new Map<THREE.Material, THREE.Mesh[]>();
+    for (const child of [...group.children]) if (child instanceof THREE.Mesh && !animated.includes(child) && !Array.isArray(child.material)) {
+      const batch = batches.get(child.material) ?? []; batch.push(child); batches.set(child.material, batch);
+    }
+    group.updateMatrixWorld(true);
+    for (const [material, meshes] of batches) if (meshes.length > 1) {
+      const geometries = meshes.map(mesh => { const geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone(); geo.applyMatrix4(mesh.matrix); return geo; });
+      const geometry = mergeGeometries(geometries, false); geometries.forEach(geo => geo.dispose());
+      if (!geometry) continue;
+      const merged = new THREE.Mesh(geometry, material); merged.castShadow = true; merged.receiveShadow = true; group.add(merged);
+      for (const mesh of meshes) { group.remove(mesh); mesh.geometry.dispose(); }
+    }
   }
   private equipModel(rig: Rig, weapon: WeaponId) {
     if (rig.weapon === weapon) return;
@@ -539,24 +557,24 @@ export class Battlefield {
   }
   private detailLevel() {
     // Modular bulkheads, warm wall lamps, conduits and floor seams mirror the concept art.
-    this.box(50,2.6,.5,"#17273d",0,4.4,-20.1);
-    for (let x=-22.5;x<=22.5;x+=5) {
-      this.box(4.75,4.8,.12,"#263c53",x,2.7,-19.94);
-      this.box(4.5,.13,.15,"#526072",x,1.5,-19.83);
-      this.box(4.5,.13,.15,"#526072",x,4.8,-19.83);
-      this.box(.3,5.8,.65,"#304253",x-2.4,2.8,-19.75);
-      this.box(1.3,.18,.18,"#efc16e",x,.65,-19.7,this.scene,true);
+    this.box(BOUNDS.x * 2,2.6,.5,"#17273d",0,4.4,-BOUNDS.z-.1);
+    for (let x=-BOUNDS.x+2.5;x<=BOUNDS.x-2.5;x+=5) {
+      this.box(4.75,4.8,.12,"#263c53",x,2.7,-BOUNDS.z+.06);
+      this.box(4.5,.13,.15,"#526072",x,1.5,-BOUNDS.z+.17);
+      this.box(4.5,.13,.15,"#526072",x,4.8,-BOUNDS.z+.17);
+      this.box(.3,5.8,.65,"#304253",x-2.4,2.8,-BOUNDS.z+.25);
+      this.box(1.3,.18,.18,"#efc16e",x,.65,-BOUNDS.z+.3,this.scene,true);
     }
-    for (const side of [-1,1]) for (let z=-15;z<19;z+=4) {
-      this.box(.14,.65,3.6,"#30445d",side*24.94,2.1,z);
-      this.box(.22,.12,3.5,"#b39456",side*24.8,1.25,z);
-      this.box(.25,.7,.44,"#bca16b",side*24.8,2.5,z);
-      this.box(.29,.47,.22,"#ffe5ac",side*24.62,2.5,z,this.scene,true);
+    for (const side of [-1,1]) for (let z=-BOUNDS.z+5;z<BOUNDS.z-1;z+=4) {
+      this.box(.14,.65,3.6,"#30445d",side*(BOUNDS.x-.06),2.1,z);
+      this.box(.22,.12,3.5,"#b39456",side*(BOUNDS.x-.2),1.25,z);
+      this.box(.25,.7,.44,"#bca16b",side*(BOUNDS.x-.2),2.5,z);
+      this.box(.29,.47,.22,"#ffe5ac",side*(BOUNDS.x-.38),2.5,z,this.scene,true);
     }
     // A pair of slim pipes and regularly spaced clamps stay inside the outer walls.
-    for (const y of [.48,.76]) this.box(48,.09,.09,"#647385",0,y,-19.65);
-    for (let x=-22;x<24;x+=2) this.box(.08,.46,.12,"#223346",x,.6,-19.57);
-    for (let x=-22;x<=22;x+=6) for (let z=-16;z<=16;z+=8) {
+    for (const y of [.48,.76]) this.box(BOUNDS.x*2-2,.09,.09,"#647385",0,y,-BOUNDS.z+.35);
+    for (let x=-BOUNDS.x+3;x<BOUNDS.x-1;x+=2) this.box(.08,.46,.12,"#223346",x,.6,-BOUNDS.z+.43);
+    for (let x=-BOUNDS.x+3;x<=BOUNDS.x-3;x+=6) for (let z=-BOUNDS.z+4;z<=BOUNDS.z-4;z+=8) {
       this.box(.35,.018,.055,"#baa56e",x,.014,z);
       this.box(.055,.019,.35,"#baa56e",x,.015,z);
     }
@@ -687,18 +705,32 @@ export class Battlefield {
     });
     this.scene.remove(group);
   }
+  resetRound() {
+    for (const rig of this.actors.values()) { (rig.body.material as THREE.Material).dispose(); this.removeRig(rig.group); }
+    for (const group of this.enemies.values()) {
+      const rig = group.userData.rig as Rig | undefined;
+      if (rig) (rig.body.material as THREE.Material).dispose();
+      this.removeRig(group);
+    }
+    for (const mesh of this.bullets.values()) this.scene.remove(mesh);
+    for (const group of this.particles.values()) this.scene.remove(group);
+    for (const group of this.hazards.values()) this.removeRig(group);
+    this.actors.clear(); this.enemies.clear(); this.bullets.clear(); this.particles.clear(); this.hazards.clear();
+    this.door.rotation.y = 0; this.snapCamera = true;
+  }
   render(
     w: World,
     selfId: string,
     dt: number,
     active: boolean,
     input: Input | null,
-    guest = false,
+    _guest = false,
   ) {
     this.clock += dt;
     const t = this.clock,
       self = w.players.find((p) => p.id === selfId) ?? w.players[0];
     if (active && self) {
+      if (this.snapCamera) { this.follow.set(self.x, 0, self.z); this.snapCamera = false; }
       this.follow.lerp(
         new THREE.Vector3(self.x, 0, self.z),
         1 - Math.exp(-dt * 7),
@@ -726,32 +758,19 @@ export class Battlefield {
       if (!rig) {
         rig = this.operative(p.color);
         rig.group.position.set(p.x, 0, p.z);
-        rig.label = this.label(p.name.toUpperCase(),COLORS[p.color],Math.min(3, 1.2+p.name.length*.06)); rig.label.position.set(0,2.35,0); rig.group.add(rig.label);
+        rig.label = this.label(p.name.toUpperCase() + (p.isBot ? " · AI" : ""),COLORS[p.color],Math.min(3, 1.2+p.name.length*.06)); rig.label.position.set(0,2.35,0); rig.group.add(rig.label);
         this.actors.set(p.id, rig);
       }
       this.equipModel(rig, p.weapon);
       if (rig.gun?.userData.rotor) (rig.gun.userData.rotor as THREE.Group).rotation.z=t*30;
-      let tx = p.x,
-        tz = p.z;
-      if (guest && p.id === selfId && input && p.health > 0) {
-        tx += input.mx * 0.45;
-        tz += input.mz * 0.45;
-      }
-      rig.target.set(
-        tx,
-        p.health > 0 ? Math.abs(Math.sin(t * 14)) * 0.04 * p.moving : 0,
-        tz,
-      );
-      rig.group.position.lerp(
-        rig.target,
-        1 - Math.exp(-dt * (guest ? 16 : 30)),
-      );
+      // Positions already come from prediction/interpolation; a second lerp adds control delay.
+      rig.group.position.set(p.x, p.health > 0 ? Math.abs(Math.sin(t * 14)) * .04 * p.moving : 0, p.z);
       rig.group.rotation.y =
         p.id === selfId && input ? Math.atan2(input.ax, input.az) : p.angle;
       rig.group.rotation.z = p.health > 0 ? 0 : Math.PI / 2;
       rig.legs[0].rotation.x = Math.sin(t * 14) * p.moving * 0.6;
       rig.legs[1].rotation.x = -Math.sin(t * 14) * p.moving * 0.6;
-      rig.flash.visible = p.fire > WEAPONS[p.weapon].fire * .48 && p.health > 0;
+      rig.flash.visible = p.flash > 0 && p.health > 0;
       rig.flash.material = this.material(WEAPONS[p.weapon].color, true);
       rig.flash.scale.setScalar(p.weapon === 3 ? 1.65 : p.weapon === 1 ? 1.1 : .65);
       rig.flash.rotation.z = t * 31;
@@ -764,22 +783,42 @@ export class Battlefield {
     const enemies = new Set(w.enemies.map((e) => e.id));
     for (const [id, g] of this.enemies)
       if (!enemies.has(id)) {
+        const rig = g.userData.rig as Rig | undefined;
+        if (rig) (rig.body.material as THREE.Material).dispose();
         this.removeRig(g);
         this.enemies.delete(id);
       }
     for (const e of w.enemies) {
+      const definition = ENEMIES[e.type];
       let g = this.enemies.get(e.id);
       if (!g) {
-        g = this.drone(e.type === "heavy", e.type === "hunter");
-        g.position.set(e.x, 1.3, e.z);
+        if (definition.humanoid) {
+          const rig = this.operative(0, "#" + definition.color.toString(16));
+          this.equipModel(rig, definition.weapon); g = rig.group; g.userData.rig = rig;
+          if (e.type === "juggernaut") g.scale.setScalar(1.3);
+          const name = this.label(definition.name, "#ffa08c", 3.1); name.position.set(0,2.65,0); g.add(name);
+          const bar = this.box(1,.07,.07,"#ff8e72",0,2.35,0,g,true); g.userData.hp = bar;
+          if (e.type === "marksman") {
+            const laser = this.box(.024,.024,18,"#ff5a67",0,1.08,9,g,true);
+            g.userData.laser = laser;
+          }
+        } else g = this.drone(e.type === "heavy", e.type === "hunter");
         this.enemies.set(e.id, g);
       }
-      g.position.lerp(
-        new THREE.Vector3(e.x, 1.35 + Math.sin(t * 4 + e.id) * 0.1, e.z),
-        1 - Math.exp(-dt * 16),
-      );
+      g.visible = !active || Math.hypot(e.x-self.x,e.z-self.z) < 43;
+      g.position.set(e.x, definition.humanoid ? 0 : 1.35 + Math.sin(t*4+e.id)*.1, e.z);
       g.rotation.y = e.angle;
-      g.rotation.z = Math.sin(t * 5 + e.id) * 0.04;
+      g.rotation.z = definition.humanoid ? 0 : Math.sin(t*5+e.id)*.04;
+      const rig = g.userData.rig as Rig | undefined;
+      if (rig) {
+        const moving = Math.min(1,Math.hypot(e.vx || 0,e.vz || 0)/definition.speed);
+        rig.legs[0].rotation.x = Math.sin(t*12)*moving*.6; rig.legs[1].rotation.x = -Math.sin(t*12)*moving*.6;
+        rig.flash.visible = e.fire > definition.rate / DIFFICULTIES[w.difficulty].speed - .07;
+        (rig.body.material as THREE.MeshStandardMaterial).emissive.set(e.hurt > 0 ? "#a14730" : "#000000");
+        (g.userData.hp as THREE.Mesh).scale.x = Math.max(0,e.hp/(e.maxHp || definition.hp));
+        if (g.userData.laser) (g.userData.laser as THREE.Mesh).visible = e.fire < .55;
+        if (rig.gun?.userData.rotor) (rig.gun.userData.rotor as THREE.Group).rotation.z = t*25;
+      }
     }
     const bullets = new Set(w.bullets.map((b) => b.id));
     for (const [id, m] of this.bullets)

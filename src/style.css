@@ -3639,3 +3639,21 @@ kbd {
 .network-banner { top:182px; padding:7px 12px; }
 @media (max-width:660px) { .network-banner { top:75px; padding:5px 9px; font-size:8px; }.network-banner button { padding:4px 7px; }.loadout-bar { bottom:142px; } }
 @media (max-height:540px) and (min-width:661px) { .network-banner { top:139px; padding:5px 10px; font-size:9px; } }
+
+.bot-select { max-width:370px; margin:14px 0 18px; padding:12px; background:#071b2bd9; border:1px solid #516f8166; border-left:2px solid #77d5c2; }
+.bot-select > div:first-child { display:flex; align-items:center; gap:7px; font:700 10px var(--mono); color:#bce8de; letter-spacing:1px; }
+.bot-select small { margin-left:auto; font-size:8px; color:#8eb5c7; letter-spacing:0; }
+.bot-select > div[role=group] { display:flex; gap:6px; margin-top:9px; }
+.bot-select button { flex:1; min-height:32px; border:1px solid #516f81; background:#122e40; font:700 12px var(--mono); color:#9cbcca; }
+.bot-select button[aria-pressed=true] { color:#b7ffe8; border-color:#82debf; background:#1d4c49; }
+.bot-select button:disabled { opacity:.35; cursor:default; }
+.bot-select p { font:10px/1.5 var(--mono); color:#9db3c3; margin:8px 0 0; }
+.compound-features { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.compound-features span { border:1px solid #847458; background:#46392366; padding:6px 8px; font:9px var(--mono); letter-spacing:.5px; color:#e6c78c; }
+.ai-crew .crew-avatar { color:#8bdec5; border:1px dashed #70ac9c; background:#174c4144; }
+.ai-crew small { color:#8bdec5; font:8px var(--mono); margin-left:5px; }
+.enemy-guide { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:20px 0; }
+.enemy-guide > div { padding:10px; border:1px solid #435d6e; display:flex; flex-direction:column; gap:5px; background:#071b2b; }
+.enemy-guide strong { font:11px var(--mono); color:#efb194; }
+.enemy-guide span { font:8px var(--mono); color:#8ba5b6; }
+@media(max-width:600px) { .bot-select { max-width:none; } .bot-select small { font-size:7px; } .enemy-guide strong { font-size:9px; } }

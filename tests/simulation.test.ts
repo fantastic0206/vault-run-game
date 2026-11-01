@@ -11,6 +11,7 @@ import {
 } from "../src/game/simulation.ts";
 import {
   blocked,
+  BOUNDS,
   clearShot,
   CORE,
   distance,
@@ -93,7 +94,7 @@ test("movement is bounded, diagonal input normalized, and dash cannot tunnel thr
   assert.ok(p.x < -14.3);
   assert.ok(!blocked(p.x, p.z, 0.42, false));
   slideMove(p, -1000, 1000, 0.42, false);
-  assert.ok(Math.abs(p.x) <= 24.58 && Math.abs(p.z) <= 19.58);
+  assert.ok(Math.abs(p.x) <= BOUNDS.x - .42 && Math.abs(p.z) <= BOUNDS.z - .42);
 });
 test("WASD direction follows the angled camera and line/box collision is continuous", () => {
   const up = screenToWorld(0, -1);
@@ -346,7 +347,7 @@ test("simulation remains finite and bounded during a sustained action sequence",
     );
     assert.ok(validWorld(frame(w), ["p1", "p2"]), `frame ${i}`);
     for (const p of w.players)
-      assert.ok(Math.abs(p.x) <= 25 && Math.abs(p.z) <= 20);
+      assert.ok(Math.abs(p.x) <= BOUNDS.x && Math.abs(p.z) <= BOUNDS.z);
   }
 });
 test("network inputs reject non-finite coordinates and clamp movement", () => {

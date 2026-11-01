@@ -10,7 +10,7 @@ const server = createServer((_req, res) => {
     JSON.stringify({
       service: "Vault Breach live relay",
       transport: "WebSocket",
-      version: "1.2.0",
+      version: "1.3.0",
       protocol: PROTOCOL,
     }),
   );

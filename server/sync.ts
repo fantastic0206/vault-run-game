@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { PROTOCOL, type Input, type World } from "../src/game/types.js";
-import { sanitizeInput, validWorld } from "../src/game/validate.js";
+import { PROTOCOL, type Input, type PlayerCommand, type World } from "../src/game/types.js";
+import { sanitizeCommands, sanitizeInput, validWorld } from "../src/game/validate.js";
 import { authenticate, publicRoom, readRoom } from "./rooms.js";
 import { ApiError, checkpoint, frameKey, getStorage, type Storage } from "./storage.js";
 
-export interface SavedInput { sender: string; stream: string; input: Input; at: number; gameId: string }
+export interface SavedInput { sender: string; stream: string; input: Input; commands?: PlayerCommand[]; at: number; gameId: string }
 export const inputKey = (code: string, gameId: string, id: string) => `vb:input:${code}:${gameId}:${id}`;
 export const validStream = (stream: unknown): stream is string => typeof stream === "string" && /^[a-zA-Z0-9-]{16,80}$/.test(stream);
 
@@ -47,13 +47,13 @@ export async function syncRequest(body: unknown, token: string, store = getStora
   if (b.gameId === room.gameId && room.phase !== "lobby") {
     if (b.world !== undefined) {
       if (self.id !== room.hostId) throw new ApiError("Only the squad lead can publish mission state.", 403);
-      if (!validWorld(b.world, ids) || b.world.difficulty !== publicRoom(room).difficulty) throw new ApiError("Invalid mission snapshot.");
+      if (!validWorld(b.world, ids) || (b.world.difficulty !== publicRoom(room).difficulty || b.world.bots !== publicRoom(room).bots)) throw new ApiError("Invalid mission snapshot.");
       await persistFrame(store, room.code, room.gameId, b.world);
     }
     if (b.input !== undefined && self.id !== room.hostId) {
-      const input = sanitizeInput(b.input);
-      if (!input || !validStream(b.stream)) throw new ApiError("Invalid control update.");
-      await persistInput(store, room.code, { sender: self.id, stream: b.stream, input, at: now, gameId: room.gameId });
+      const input = sanitizeInput(b.input), commands = b.commands === undefined ? undefined : sanitizeCommands(b.commands);
+      if (!input || commands === null || !validStream(b.stream)) throw new ApiError("Invalid control update.");
+      await persistInput(store, room.code, { sender: self.id, stream: b.stream, input, commands: commands ?? undefined, at: now, gameId: room.gameId });
     }
   }
   const cached = room.phase === "lobby" ? null : await checkpoint(store, room.code, room.gameId);

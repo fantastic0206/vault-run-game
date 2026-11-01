@@ -37,10 +37,10 @@ function browserClient(seat:Session,url:string) {
   const link=new CrewLink(seat,{
     status(connected,error,terminal){client.live=connected;if(terminal)faults.push(error);},
     room(room,checkpoint){states.push(room);if(room.phase==="lobby")runtime.menu();else{runtime.coop(room,checkpoint);runtime.roomUpdate(room);}},
-    input(gameId,id,input,stream){runtime.remoteInput(gameId,id,input,stream);},
+    input(gameId,id,input,stream,commands){runtime.remoteInput(gameId,id,input,stream,commands);},
     world(gameId,w){runtime.remoteFrame(gameId,w);},
-  },{url});
-  runtime.callbacks={...runtime.callbacks,input:input=>link.input(runtime.gameId,input),frame:w=>link.world(runtime.gameId,w),fault:message=>faults.push(message)};
+  },{url,stream:runtime.controlStream});
+  runtime.callbacks={...runtime.callbacks,input:(input,commands)=>link.input(runtime.gameId,input,commands),frame:w=>link.world(runtime.gameId,w),fault:message=>faults.push(message)};
   client.link=link;
   return client;
 }
@@ -123,7 +123,7 @@ test("a provider that rejects both publish and subscribe still allows guest move
     await roomRequest({type:"start",code:host.room.code,live:true},host.token!,"ip",store);
     await waitFor(()=>clients.every(c=>c.runtime.active&&!c.runtime.awaitingFrame&&c.runtime.world.tick>20));
     clients[1].select(0);await waitFor(()=>clients.every(c=>c.runtime.world.players[1].weapon===0));
-    await waitFor(()=>clients[0].runtime.world.players[1].x>-16);
+    await waitFor(()=>clients[0].runtime.world.players[1].x>-35);
     assert.deepEqual(clients.flatMap(c=>c.faults),[]);
   }finally{clients.forEach(c=>c.close());for(const l of [liveA,liveB]){l.wss.clients.forEach(ws=>ws.terminate());l.close();}a.closeAllConnections();b.closeAllConnections();await Promise.all([new Promise<void>(r=>a.close(()=>r())),new Promise<void>(r=>b.close(()=>r()))]);}
 });
@@ -139,7 +139,7 @@ test("two clients can start and play when WebSocket upgrades are blocked entirel
     for(const s of [host,guest])await roomRequest({type:"sync",code:host.room.code,live:true},s.token!,"ip",store);
     await roomRequest({type:"start",code:host.room.code,live:true},host.token!,"ip",store);
     await waitFor(()=>clients.every(c=>c.runtime.active&&!c.runtime.awaitingFrame&&c.runtime.world.tick>15));
-    await waitFor(()=>clients[0].runtime.world.players[1].x>-16.5);
+    await waitFor(()=>clients[0].runtime.world.players[1].x>-35.5);
     assert.deepEqual(clients.flatMap(c=>c.faults),[]);
   } finally {clients.forEach(c=>c.close());a.closeAllConnections();b.closeAllConnections();await Promise.all([new Promise<void>(r=>a.close(()=>r())),new Promise<void>(r=>b.close(()=>r()))]);}
 });

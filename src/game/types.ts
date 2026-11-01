@@ -21,6 +21,7 @@ export interface Input {
   seq: number;
   weapon: WeaponId | -1;
 }
+export interface PlayerCommand { input: Input; dt: number }
 export interface Operative extends Vec2 {
   id: string;
   name: string;
@@ -42,12 +43,22 @@ export interface Operative extends Vec2 {
   kills: number;
   revive: number;
   lastInput: number;
+  inputStream: string;
+  vx: number;
+  vz: number;
+  shots: number;
+  flash: number;
+  isBot?: boolean;
 }
+export type EnemyType = "drone" | "heavy" | "hunter" | "guard" | "raider" | "marksman" | "juggernaut";
 export interface Enemy extends Vec2 {
   id: number;
   angle: number;
   hp: number;
-  type: "drone" | "heavy" | "hunter";
+  type: EnemyType;
+  maxHp?: number;
+  vx?: number;
+  vz?: number;
   fire: number;
   path: Vec2[];
   pathTime: number;
@@ -63,6 +74,8 @@ export interface Projectile extends Vec2 {
   damage: number;
   weapon?: WeaponId;
   splash?: number;
+  shot?: string;
+  born?: number;
 }
 export interface Relay extends Vec2 {
   id: number;
@@ -87,10 +100,11 @@ export interface SecurityStrike extends Vec2 {
   radius: number;
   hit: boolean;
 }
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 export interface World {
   version: number;
   difficulty: Difficulty;
+  bots: number;
   tick: number;
   time: number;
   status: "playing" | "won" | "lost" | "aborted";
@@ -129,6 +143,7 @@ export interface Room {
   hostId: string;
   phase: "lobby" | "playing" | "finished";
   difficulty: Difficulty;
+  bots: number;
   selfId: string;
   players: Seat[];
   result: "won" | "lost" | "aborted" | null;

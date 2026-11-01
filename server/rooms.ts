@@ -32,6 +32,7 @@ export interface PrivateRoom {
   players: PrivateSeat[];
   result: Room["result"];
   difficulty: Room["difficulty"];
+  bots: number;
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 function name(value: unknown) {
@@ -74,6 +75,7 @@ export function publicRoom(
     phase: r.phase,
     result: r.result,
     difficulty: isDifficulty(r.difficulty) ? r.difficulty : "casual",
+    bots: Math.max(0, Math.min(4 - r.players.length, Math.floor(r.bots || 0))),
     selfId,
     players: r.players
       .filter((p) => !p.left || r.phase !== "lobby")
@@ -163,6 +165,7 @@ export async function roomRequest(
           ],
           result: null,
           difficulty: isDifficulty(b.difficulty) ? b.difficulty : "casual",
+          bots: Number.isInteger(b.bots) ? Math.max(0, Math.min(3, Number(b.bots))) : 0,
         };
       if (await store.cas(roomKey(c), null, JSON.stringify(r), 21600))
         return { room: publicRoom(r, id, now), token, id };
@@ -200,6 +203,7 @@ export async function roomRequest(
         live: false,
         left: false,
       });
+      r.bots = Math.min(r.bots || 0, 4 - r.players.length);
       if (!r.players.some((p) => p.id === r.hostId)) r.hostId = id;
     });
     return { room: publicRoom(r, id, now), token, id };
@@ -241,6 +245,12 @@ export async function roomRequest(
       if (r.phase !== "lobby") throw new ApiError("Choose difficulty in the lobby.", 409);
       if (!isDifficulty(b.difficulty)) throw new ApiError("Choose a valid difficulty.");
       r.difficulty = b.difficulty;
+      return;
+    }
+    if (type === "bots") {
+      if (r.phase !== "lobby") throw new ApiError("Choose AI backup in the lobby.", 409);
+      if (!Number.isInteger(b.bots) || Number(b.bots) < 0 || Number(b.bots) > 4 - r.players.length) throw new ApiError("Choose up to 4 total crew members.");
+      r.bots = Number(b.bots);
       return;
     }
     if (type === "start") {

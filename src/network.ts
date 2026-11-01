@@ -1,5 +1,5 @@
-import { PROTOCOL, type Input, type Room, type Session, type World } from "./game/types";
-import { sanitizeInput, validRoom, validWorld } from "./game/validate";
+import { PROTOCOL, type Input, type PlayerCommand, type Room, type Session, type World } from "./game/types";
+import { sanitizeCommands, sanitizeInput, validRoom, validWorld } from "./game/validate";
 
 export class NetworkError extends Error {
   constructor(message: string, public status = 0) { super(message); }
@@ -20,7 +20,7 @@ export async function roomApi(body: Record<string, unknown>, token?: string) {
 interface Events {
   room: (room: Room, world?: World | null) => void;
   world: (gameId: string, world: unknown) => void;
-  input: (gameId: string, id: string, input: Input, stream: string) => void;
+  input: (gameId: string, id: string, input: Input, stream: string, commands?: PlayerCommand[]) => void;
   status: (live: boolean, error: string, terminal?: boolean) => void;
 }
 export class CrewLink {
@@ -43,13 +43,15 @@ export class CrewLink {
   private pollAgain = false;
   private controller?: AbortController;
   private latestInput: Input | null = null;
+  private latestCommands: PlayerCommand[] | undefined;
   private latestWorld: World | null = null;
   private statusKey = "";
-  private stream = globalThis.crypto?.randomUUID?.() ?? `control-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  private stream: string = globalThis.crypto?.randomUUID?.() ?? `control-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   private httpUrl: string;
   live = false;
 
-  constructor(private seat: Session, private events: Events, private options: { url?: string; httpUrl?: string } = {}) {
+  constructor(private seat: Session, private events: Events, private options: { url?: string; httpUrl?: string; stream?: string } = {}) {
+    if (options.stream) this.stream = options.stream;
     this.httpUrl = options.httpUrl ?? (options.url ? options.url.replace(/^ws/, "http").replace(/\/api\/live(?:\?.*)?$/, "/api/sync") : "/api/sync");
     this.connect();
     void this.poll();
@@ -62,7 +64,7 @@ export class CrewLink {
   private connectionStatus() {
     const now = Date.now(), guest = this.room && this.room.hostId !== this.seat.id && this.room.phase === "playing";
     if (guest && now - (this.lastFrame || this.missionSince) > 4000) this.status("Waiting for the squad lead’s mission updates…");
-    else if (this.httpSuccess && (!this.socketReady || (guest && now - this.lastSocketFrame > 1400))) this.status("Backup connection active · Crew synchronized");
+    else if (this.httpSuccess && (!this.socketReady || (guest && now - this.lastSocketFrame > 1400))) this.status("Backup connection · Reduced update rate");
     else this.status();
   }
   private stopWith(message: string) {
@@ -79,7 +81,7 @@ export class CrewLink {
       next = this.room;
     }
     if (next.gameId !== this.room?.gameId) {
-      this.latestInput = null; this.latestWorld = null; this.lastTick = -1;
+      this.latestInput = null; this.latestCommands = undefined; this.latestWorld = null; this.lastTick = -1;
       this.lastFrame = this.lastSocketFrame = 0; this.missionSince = Date.now();
     }
     this.room = next;
@@ -126,7 +128,7 @@ export class CrewLink {
           if (this.acceptRoom(message.room)) this.resync();
         } else if (message.type === "world" && this.socketReady) this.acceptWorld(message.gameId, message.world, true);
         else if (message.type === "input" && message.gameId === this.room?.gameId && typeof message.sender === "string" && typeof message.stream === "string") {
-          const input = sanitizeInput(message.input); if (input) this.events.input(message.gameId, message.sender, input, message.stream);
+          const input = sanitizeInput(message.input); if (input) this.events.input(message.gameId, message.sender, input, message.stream, sanitizeCommands(message.commands) ?? undefined);
         } else if (message.type === "error") {
           if (message.terminal) this.stopWith(String(message.error));
           else { this.resync(); if (Date.now() - this.httpSuccess > 2500) this.status("Recovering the crew connection…"); else this.connectionStatus(); }
@@ -153,7 +155,7 @@ export class CrewLink {
     try {
       const host = this.room?.hostId === this.seat.id;
       const payload = { protocol: PROTOCOL, code: this.seat.code, gameId, stream: this.stream,
-        ...(host && this.latestWorld ? { world: this.latestWorld } : {}), ...(!host && this.latestInput ? { input: this.latestInput } : {}) };
+        ...(host && this.latestWorld ? { world: this.latestWorld } : {}), ...(!host && this.latestInput ? { input: this.latestInput, commands: this.latestCommands } : {}) };
       const response = await fetch(this.httpUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.seat.token}` }, body: JSON.stringify(payload), cache: "no-store", signal: controller.signal });
       const data = await response.json();
       if (this.stopped || this.terminal) return;
@@ -166,7 +168,7 @@ export class CrewLink {
       if (this.acceptRoom(data.room, data.world)) {
         if (data.room.hostId === this.seat.id && Array.isArray(data.inputs)) for (const packet of data.inputs) {
           const input = sanitizeInput(packet.input);
-          if (input && packet.gameId === data.room.gameId && typeof packet.sender === "string" && typeof packet.stream === "string") this.events.input(packet.gameId, packet.sender, input, packet.stream);
+          if (input && packet.gameId === data.room.gameId && typeof packet.sender === "string" && typeof packet.stream === "string") this.events.input(packet.gameId, packet.sender, input, packet.stream, sanitizeCommands(packet.commands) ?? undefined);
         }
       }
       this.connectionStatus();
@@ -185,7 +187,7 @@ export class CrewLink {
     }
   }
   resync() { if (this.httpBusy) this.pollAgain = true; else { clearTimeout(this.pollTimer); this.pollTimer = setTimeout(() => void this.poll(), 180); } }
-  input(gameId: string, input: Input) { if (gameId === this.room?.gameId) this.latestInput = input; this.send({ type: "input", gameId, input }); }
+  input(gameId: string, input: Input, commands?: PlayerCommand[]) { if (gameId === this.room?.gameId) { this.latestInput = input; this.latestCommands = commands; } this.send({ type: "input", gameId, input, commands }); }
   world(gameId: string, world: World) { if (gameId === this.room?.gameId) this.latestWorld = world; this.send({ type: "world", gameId, world }); }
   private send(packet: unknown) { if (this.socketReady && this.socket?.readyState === 1 && this.socket.bufferedAmount < 300000) this.socket.send(JSON.stringify(packet)); }
   close() {

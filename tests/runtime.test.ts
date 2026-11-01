@@ -9,7 +9,7 @@ import { validWorld } from "../src/game/validate.ts";
 
 const seats = ["Rook", "Ghost", "Cipher", "Ember"].map((name,i) => ({ id: "seat-"+i,name,color:i,online:true,left:false }));
 function room(self=0,gameId="mission-1"): Room {
-  return { code:"ABC234",version:1,gameId,hostId:seats[0].id,selfId:seats[self].id,phase:"playing",difficulty:"lockdown",players:structuredClone(seats),result:null };
+  return { code:"ABC234",version:1,gameId,hostId:seats[0].id,selfId:seats[self].id,phase:"playing",difficulty:"lockdown",bots:0,players:structuredClone(seats),result:null };
 }
 function client() {
   let now=1000, seq=0;
@@ -118,7 +118,7 @@ test("a late host checkpoint is restored even if room metadata already started t
     const checkpoint=frame(createWorld(seats,9,"lockdown"));checkpoint.tick=5000;checkpoint.time=100;
     c.game.coop(room(),checkpoint);
     assert.equal(c.game.world.tick,5000);assert.equal(c.game.world.time,100);
-    c.advance();c.tick();assert.equal(c.game.world.tick,5001);
+    c.advance();c.tick();assert.equal(c.game.world.tick,5003);
     assert.deepEqual(c.faults,[]);
   } finally{c.game.dispose();}
 });

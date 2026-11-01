@@ -1,3 +1,18 @@
+# v1.3.0 · Squad & Compound Update
+
+- Replace guest snapshot-only control with shared 60 Hz movement/weapon simulation, local prediction, host acknowledgements and replay. Read controls once per step. Deduplicate retransmitted command bundles and bound processing by host elapsed time. Keep stream identities aligned across both transports.
+- Render shots immediately for the shooter, reconcile predicted/confirmed tracers, and move remote bullets continuously between updates. Expire and collide visual projectiles instead of leaving them suspended. Add actor velocity, interpolation, bounded extrapolation and a monotonic presentation clock to reduce jitter without an extra scene-position lerp.
+- Increase the compound from 50 × 40 to 100 × 80 (four times the area), distribute relays across four outer districts, add cover and walls, and increase medkits to six. Replace the small fixed navigation grid with cached whole-compound A*. Expand level geometry, lighting, floor tiles and minimap.
+- Add humanoid riflemen, breachers, marksmen and juggernauts alongside the three drone types. Add different ranges, movement, firing patterns, humanoid models, visible guns, labels, health bars and a marksman aiming laser. Batch fixed operative geometry to reduce draw calls.
+- Add host-configurable 0–3 humanoid AI squadmates, defaulting to one in solo. Allies follow humans, fight, avoid marked strikes and revive. Humans retain relay/core control. Joining humans replace AI slots while the crew stays capped at four. Bots are explicitly labelled AI.
+- Preserve Casual and the four unlocked guns, including the strongest starting Nova. Add the AI selector, squad labels, field manual and updated deployment instructions for a browser-only Vercel Drop flow.
+- Clear dynamic scene models and labels between missions, reset the spawn camera, and preserve projectile visuals across solo pause/resume.
+- Release 1.3.0 uses protocol/world schema **4**. All players must refresh and create a fresh room after deploying the complete project.
+
+69 automated checks cover existing transport/recovery/combat plus deterministic latency, jitter, packet loss/duplicates, immediate local movement/fire, speed parity and convergence, collision/dash reconciliation, continuous tracers, map navigation, humanoid classes and AI behavior. Browser/GPU rendering and the user's live Vercel/Redis deployment are not verified in this workspace.
+
+---
+
 # v1.2.0 · Big Guns Update
 
 - Casual is now the default. No starting guards, a seven-second grace period, lower enemy health/damage/speed, fewer enemies, fast 1.5-second hacks, 2-second extraction, faster shield recovery, and 20-second medkit respawns. Casual objectives do not require a clear perimeter. Tactical is also gentler; hard modes remain optional.

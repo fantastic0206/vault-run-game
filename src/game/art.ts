@@ -26,7 +26,7 @@ export function steelFloor() {
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  map.repeat.set(25, 20);
+  map.repeat.set(50, 40);
   map.anisotropy = 8;
   return map;
 }

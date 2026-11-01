@@ -1,7 +1,7 @@
 import { type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import { sanitizeInput, validWorld } from "../src/game/validate.js";
+import { sanitizeCommands, sanitizeInput, validWorld } from "../src/game/validate.js";
 import { PROTOCOL } from "../src/game/types.js";
 import { persistFrame, persistInput, validStream } from "./sync.js";
 import {
@@ -161,11 +161,11 @@ export function attachLive(server: Server, provided?: Storage) {
         if (message.gameId !== c.room.gameId || c.room.phase === "lobby")
           return;
         if (message.type === "input") {
-          const input = sanitizeInput(message.input);
-          if (!input) return;
+          const input = sanitizeInput(message.input), commands = message.commands === undefined ? undefined : sanitizeCommands(message.commands);
+          if (!input || commands === null) return;
           if (now - c.inputCheckpoint > 180) {
             c.inputCheckpoint = now;
-            await persistInput(store, c.code, { sender: c.id, stream: c.stream, input, at: now, gameId: c.room.gameId });
+            await persistInput(store, c.code, { sender: c.id, stream: c.stream, input, commands: commands ?? undefined, at: now, gameId: c.room.gameId });
           }
           await store.publish(
             liveChannel(c.code),
@@ -175,12 +175,13 @@ export function attachLive(server: Server, provided?: Storage) {
               stream: c.stream,
               target: c.room.hostId,
               input,
+              commands,
               gameId: c.room.gameId,
             }),
           );
         } else if (message.type === "world") {
           if (
-            c.id !== c.room.hostId ||
+            c.id !== c.room.hostId || message.world?.bots !== publicRoom(c.room).bots ||
             !validWorld(
               message.world,
               c.room.players.map((p) => p.id),

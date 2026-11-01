@@ -9,6 +9,7 @@ import {
 import { createRoot } from "react-dom/client";
 import {
   ArrowRight,
+  Bot,
   Check,
   CheckCheck,
   ChevronRight,
@@ -42,7 +43,7 @@ import {
 } from "lucide-react";
 import { Runtime } from "./game/runtime";
 import { enableSound, sound } from "./game/audio";
-import { CORE, EXTRACTION, OBSTACLES, RELAYS } from "./game/map";
+import { BOUNDS, CORE, EXTRACTION, OBSTACLES, RELAYS } from "./game/map";
 import {
   interactionHint,
   MISSION_SECONDS,
@@ -52,6 +53,8 @@ import { COLORS, type Room, type Session, type World } from "./game/types";
 import type { Difficulty } from "./game/types";
 import { DIFFICULTIES, EXTRACT_SECONDS, HACK_SECONDS } from "./game/balance";
 import { graphicsQuality } from "./game/art";
+import { ALLY_NAMES } from "./game/ai";
+import { ENEMIES } from "./game/enemies";
 import { WEAPONS, type WeaponId } from "./game/weapons";
 import { CrewLink, NetworkError, roomApi } from "./network";
 import "./style.css";
@@ -122,6 +125,7 @@ function App() {
     [webglError, setWebglError] = useState("");
   const [runtimeError, setRuntimeError] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("casual");
+  const [bots, setBots] = useState(1);
   const [busy, setBusy] = useState(false),
     busyRef = useRef(false),
     [paused, setPaused] = useState(false),
@@ -148,6 +152,7 @@ function App() {
       return;
     roomRef.current = next;
     setDifficulty(next.difficulty);
+    setBots(next.bots);
     setRoom(next);
     if (next.phase === "lobby") {
       if (runtime.current?.multiplayer) runtime.current.menu();
@@ -178,7 +183,7 @@ function App() {
       runtime.current = game;
       game.callbacks = {
         hud: setHud,
-        input: (input) => link.current?.input(game.gameId, input),
+        input: (input, commands) => link.current?.input(game.gameId, input, commands),
         frame: (world) => link.current?.world(game.gameId, world),
         outcome: (world) => callbacks.current.outcome(world),
         fault: (message) => {
@@ -210,7 +215,7 @@ function App() {
         if (active) callbacks.current.acceptRoom(r, w);
       },
       world: (gameId, w) => { if (active) runtime.current?.remoteFrame(gameId, w); },
-      input: (gameId, id, input, stream) => { if (active) runtime.current?.remoteInput(gameId, id, input, stream); },
+      input: (gameId, id, input, stream, commands) => { if (active) runtime.current?.remoteInput(gameId, id, input, stream, commands); },
       status: (connected, message, terminal) => {
         if (active) {
           const wasConnected = liveRef.current;
@@ -221,7 +226,7 @@ function App() {
           if (connected && !wasConnected) void sync();
         }
       },
-    });
+    }, { stream: runtime.current?.controlStream });
     link.current = crew;
     const sync = async () => {
       if (!active || seatRef.current?.token !== seat.token) return;
@@ -319,7 +324,7 @@ function App() {
     try {
       localStorage.setItem("vault-breach-name", name);
     } catch {}
-    runtime.current?.solo(name.trim() || "Rook", difficulty);
+    runtime.current?.solo(name.trim() || "Rook", difficulty, bots);
     setPage("game");
     setPaused(false);
     setToast("MISSION LIVE · Disable the three security relays.");
@@ -330,7 +335,7 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      const result = await roomApi({ type, name: name.trim(), code, difficulty });
+      const result = await roomApi({ type, name: name.trim(), code, difficulty, bots });
       const s = {
         code: result.room.code,
         token: result.token!,
@@ -416,6 +421,8 @@ function App() {
           toggleSound={toggleSound}
           difficulty={difficulty}
           setDifficulty={setDifficulty}
+          bots={bots}
+          setBots={setBots}
         />
       )}
       {page === "lobby" && (
@@ -461,6 +468,7 @@ function App() {
                 </button>
               </div>
               <DifficultySelect value={room?.difficulty ?? difficulty} onChange={(difficulty) => void perform("difficulty", { difficulty })} disabled={busy || room?.hostId !== currentId} />
+              <BotSelect value={room?.bots ?? 0} onChange={(bots) => void perform("bots", { bots })} max={4 - (room?.players.length ?? 1)} disabled={busy || room?.hostId !== currentId} />
               <MissionBrief difficulty={room?.difficulty ?? difficulty} />
               <p className="lobby-note">
                 <Shield size={13} />
@@ -475,7 +483,7 @@ function App() {
                   THE CREW
                 </span>
                 <b>
-                  {room?.players.length ?? 1}
+                  {(room?.players.length ?? 1) + (room?.bots ?? 0)}
                   <small> / 4</small>
                 </b>
               </div>
@@ -509,8 +517,9 @@ function App() {
                     <span className={`presence ${p.online ? "online" : ""}`} />
                   </div>
                 ))}
+                {Array.from({ length: room?.bots ?? 0 }, (_, i) => <div className="crew-row ai-crew" key={`ally-${i}`}><span className="crew-avatar"><Bot size={23}/></span><div><strong>{ALLY_NAMES[i]} <small>AI</small></strong><span>FOLLOW · FIGHT · REVIVE</span></div><span className="presence online"/></div>)}
                 {Array.from(
-                  { length: Math.max(0, 4 - (room?.players.length ?? 0)) },
+                  { length: Math.max(0, 4 - (room?.players.length ?? 0) - (room?.bots ?? 0)) },
                   (_, i) => (
                     <div className="empty-seat" key={i}>
                       <Users size={19} />
@@ -545,7 +554,7 @@ function App() {
                 )}
               </button>
               <p className="card-footnote">
-                1–4 operatives · Shared mission · No friendly fire
+                1–4 crew · AI makes room for friends · No friendly fire
               </p>
             </aside>
           </main>
@@ -581,7 +590,7 @@ function App() {
                 <p>
                   {seat
                     ? "The co-op mission continues while this menu is open."
-                    : "Your operative and the security drones are on hold."}
+                    : "Your crew and security are on hold."}
                 </p>
                 <button className="button primary full" onClick={togglePause}>
                   <Play size={16} />
@@ -643,7 +652,7 @@ function App() {
                 <div className="result-stats">
                   <div>
                     <strong>{hud.kills}</strong>
-                    <span>DRONES DOWN</span>
+                    <span>HOSTILES DOWN</span>
                   </div>
                   <div>
                     <strong>{formatTime(hud.time)}</strong>
@@ -659,7 +668,7 @@ function App() {
                     <div key={p.id}>
                       <span style={{ color: COLORS[p.color] }}>
                         <Crosshair size={15} />
-                        {p.name}
+                        {p.name}{p.isBot && <small> AI</small>}
                       </span>
                       <strong>
                         {p.kills} <small>TAKEDOWNS</small>
@@ -743,6 +752,10 @@ function MissionBrief({ difficulty = "casual" }: { difficulty?: Difficulty }) {
     </div>
   );
 }
+function BotSelect({ value, onChange, disabled = false, max = 3 }: { value: number; onChange: (bots: number) => void; disabled?: boolean; max?: number }) {
+  return <div className="bot-select"><div><Bot size={14}/><span>AI BACKUP</span><small>{value ? `${value} SQUADMATE${value > 1 ? "S" : ""}` : "HUMAN CREW ONLY"}</small></div><div role="group" aria-label="Number of AI squadmates">{[0,1,2,3].map(n => <button key={n} type="button" aria-pressed={value === n} disabled={disabled || n > max} onClick={() => onChange(n)}>{n === 0 ? "OFF" : `+${n}`}</button>)}</div><p>Humanoid allies follow, fight, and revive you.</p></div>;
+}
+
 function Home({
   name,
   setName,
@@ -756,6 +769,8 @@ function Home({
   toggleSound,
   difficulty,
   setDifficulty,
+  bots = 1,
+  setBots = () => {},
 }: {
   name: string;
   setName: (n: string) => void;
@@ -769,6 +784,8 @@ function Home({
   toggleSound: () => void;
   difficulty: Difficulty;
   setDifficulty: (value: Difficulty) => void;
+  bots?: number;
+  setBots?: (value: number) => void;
 }) {
   const invite = new URLSearchParams(location.search).get("room") ?? "";
   const [mode, setMode] = useState<"create" | "join">(
@@ -830,6 +847,8 @@ function Home({
             </button>
           </div>
           <DifficultySelect value={difficulty} onChange={setDifficulty} disabled={busy} />
+          <BotSelect value={bots} onChange={setBots} disabled={busy}/>
+          <div className="compound-features"><span>4× LARGER COMPOUND</span><span>7 ENEMY CLASSES</span></div>
           <div className="hero-tags">
             <span>
               <Crosshair size={13} />
@@ -973,7 +992,7 @@ function Home({
           GET IN. GET OUT. GET RICH.
         </span>
         <span>WASD TO MOVE · MOUSE TO AIM · SPACE TO DASH</span>
-        <span>V1.2 · BIG GUNS UPDATE</span>
+        <span>V1.3 · SQUAD & COMPOUND UPDATE</span>
       </footer>
     </div>
   );
@@ -983,19 +1002,19 @@ function MiniMap({ world, selfId }: { world: World; selfId: string }) {
   return (
     <div className="minimap">
       <div>
-        <span>SECTOR 07</span>
+        <span>COMPOUND · 100 × 80</span>
         <small>N ↑</small>
       </div>
       <svg
-        viewBox="-27 -22 54 44"
+        viewBox={`${-BOUNDS.x - 2} ${-BOUNDS.z - 2} ${BOUNDS.x * 2 + 4} ${BOUNDS.z * 2 + 4}`}
         role="img"
         aria-label="Arena minimap with relays, extraction, crew, and enemies"
       >
         <rect
-          x="-25"
-          y="-20"
-          width="50"
-          height="40"
+          x={-BOUNDS.x}
+          y={-BOUNDS.z}
+          width={BOUNDS.x * 2}
+          height={BOUNDS.z * 2}
           rx=".6"
           fill="#142536"
           stroke="#425b6b"
@@ -1026,14 +1045,14 @@ function MiniMap({ world, selfId }: { world: World; selfId: string }) {
             <circle
               cx={r.x}
               cy={r.z}
-              r="1.3"
+              r="2.3"
               fill={r.done ? "#7be4bb" : "#e7b968"}
             />
             <text
               x={r.x}
-              y={r.z + 0.55}
+              y={r.z + .95}
               textAnchor="middle"
-              fontSize="1.8"
+              fontSize="3.2"
               fill="#122131"
             >
               {r.id + 1}
@@ -1048,7 +1067,7 @@ function MiniMap({ world, selfId }: { world: World; selfId: string }) {
           />
         )}
         {world.enemies.map((e) => (
-          <circle key={e.id} cx={e.x} cy={e.z} r=".55" fill="#ed8b78" />
+          <circle key={e.id} cx={e.x} cy={e.z} r="1" fill="#ed8b78" />
         ))}
         {world.players.map((p) => (
           <g
@@ -1056,7 +1075,7 @@ function MiniMap({ world, selfId }: { world: World; selfId: string }) {
             transform={`translate(${p.x} ${p.z}) rotate(${(-p.angle * 180) / Math.PI + 180})`}
           >
             <path
-              d="M0 -1.2 L.85 .8 L0 .45 L-.85 .8Z"
+              d="M0 -2.1 L1.5 1.4 L0 .8 L-1.5 1.4Z"
               fill={p.health > 0 ? COLORS[p.color] : "#69798a"}
               stroke={p.id === selfId ? "#ffffff" : "none"}
               strokeWidth=".18"
@@ -1068,7 +1087,7 @@ function MiniMap({ world, selfId }: { world: World; selfId: string }) {
         <i className="map-relay" />
         RELAY
         <i className="map-enemy" />
-        DRONE
+        ENEMY
         <i className="map-exit" />
         EXFIL
       </p>
@@ -1172,7 +1191,7 @@ function GameHUD({
               </span>
               <strong>
                 {p.name}
-                {p.id === selfId && <small> YOU</small>}
+                {p.id === selfId && <small> YOU</small>}{p.isBot && <small> AI</small>}
               </strong>
               <span className={p.health === 0 ? "downed" : ""}>
                 {p.health === 0 ? "DOWN" : Math.ceil(p.health)}
@@ -1422,7 +1441,7 @@ function Manual({ close, difficulty }: { close: () => void; difficulty: Difficul
       <h2 id="manual-title">
         THE PLAN IS SIMPLE.
         <br />
-        <em>THE DRONES AREN’T.</em>
+        <em>SECURITY ISN’T.</em>
       </h2>
       <MissionBrief difficulty={difficulty} />
       <div className="control-table">
@@ -1450,6 +1469,8 @@ function Manual({ close, difficulty }: { close: () => void; difficulty: Difficul
         ACT replaces E. Gamepads use left/right sticks, RT to fire, A to dash, X
         to reload, Y to interact, and B to cycle guns. All four guns are unlocked; you start with the Nova cannon.
       </p>
+      <p className="manual-note">AI backup adds up to three humanoid squadmates. Vex, Bolt, and Echo follow the human crew, fire their carbines at security, avoid marked strikes, and revive downed humans. They leave relay hacking and carrying the core to you. Friends replace AI seats as they join the lobby. The expanded 100 × 80 compound has four outer districts around the central vault; use the minimap to plan your route.</p>
+      <div className="enemy-guide">{Object.values(ENEMIES).map(enemy => <div key={enemy.name}><strong>{enemy.name}</strong><span>{enemy.humanoid ? "HUMANOID SECURITY" : "AUTONOMOUS DRONE"}</span></div>)}</div>
       <p className="manual-note">
         Casual is the recommended starting difficulty: weaker, slower enemies, fast hacks, a two-second extraction, and faster shield recovery. Green medkits
         restore health. Walls and crates block shots. Friendly fire is off. The
