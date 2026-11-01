@@ -1,5 +1,6 @@
 import { EMPTY_INPUT, type Input, type Operative } from "./types";
 import type { Battlefield } from "./scene";
+import { isWeapon, type WeaponId } from "./weapons";
 export function screenToWorld(x: number, y: number) {
   return { x: x * 0.795 + y * 0.606, z: -x * 0.606 + y * 0.795 };
 }
@@ -15,6 +16,8 @@ export class Controls {
   private reload = false;
   private lastAim = { x: 0, z: -1 };
   private gamepadDash = false;
+  private gamepadWeapon = false;
+  private weapon: Input["weapon"] = -1;
   constructor(
     private canvas: HTMLCanvasElement,
     private view: Battlefield,
@@ -46,11 +49,13 @@ export class Controls {
         "Space",
         "KeyE",
         "KeyR",
+        "Digit1", "Digit2", "Digit3", "Digit4", "Numpad1", "Numpad2", "Numpad3", "Numpad4",
       ].includes(e.code)
     ) {
       e.preventDefault();
       this.keys.add(e.code);
       if (e.code === "Space" && !e.repeat) this.dash++;
+      if (/^(Digit|Numpad)[1-4]$/.test(e.code)) this.selectWeapon(Number(e.code.at(-1)) - 1);
     }
   };
   private keyup = (e: KeyboardEvent) => {
@@ -83,7 +88,10 @@ export class Controls {
     this.aim.active = false;
     this.interact = false;
     this.reload = false;
+    this.weapon = -1;
   }
+  selectWeapon(value: number) { if (isWeapon(value)) this.weapon = value; }
+  restoreCounters(lastDash: number) { this.dash = Math.max(0, Math.floor(lastDash)); }
   stick(kind: "move" | "aim", x: number, y: number, active = true) {
     if (kind === "move") this.move = { x, y };
     else this.aim = { x, y, active };
@@ -125,6 +133,8 @@ export class Controls {
       reload ||= !!pad.buttons[2]?.pressed;
       if (pad.buttons[0]?.pressed && !this.gamepadDash) this.dash++;
       this.gamepadDash = !!pad.buttons[0]?.pressed;
+      if (pad.buttons[1]?.pressed && !this.gamepadWeapon) this.weapon = ((player.weapon + 1) % 4) as WeaponId;
+      this.gamepadWeapon = !!pad.buttons[1]?.pressed;
     }
     if (this.aim.active && Math.hypot(this.aim.x, this.aim.y) > 0.12) {
       this.lastAim = screenToWorld(this.aim.x, this.aim.y);
@@ -147,6 +157,7 @@ export class Controls {
       reload,
       dash: this.dash,
       seq: ++this.seq,
+      weapon: this.weapon,
     };
   }
   dispose() {

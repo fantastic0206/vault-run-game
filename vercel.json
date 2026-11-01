@@ -5,6 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/room.ts": { "maxDuration": 15 },
+    "api/sync.ts": { "maxDuration": 15 },
     "api/live.ts": { "maxDuration": 300 }
   },
   "headers": [

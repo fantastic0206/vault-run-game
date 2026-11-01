@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { sanitizeInput, validWorld } from "../src/game/validate.js";
 import { PROTOCOL } from "../src/game/types.js";
+import { persistFrame, persistInput, validStream } from "./sync.js";
 import {
   authenticate,
   publicRoom,
@@ -30,6 +31,7 @@ interface Connection {
   checkpoint: number;
   refresh: number;
   stream: string;
+  inputCheckpoint: number;
 }
 export function attachLive(server: Server, provided?: Storage) {
   const wss = new WebSocketServer({
@@ -94,7 +96,8 @@ export function attachLive(server: Server, provided?: Storage) {
             window: Date.now(),
             checkpoint: 0,
             refresh: Date.now(),
-            stream: randomUUID(),
+            stream: validStream(message.stream) ? message.stream : randomUUID(),
+            inputCheckpoint: 0,
           };
           const c = connection;
           c.unsubscribe = await store.subscribe(
@@ -160,6 +163,10 @@ export function attachLive(server: Server, provided?: Storage) {
         if (message.type === "input") {
           const input = sanitizeInput(message.input);
           if (!input) return;
+          if (now - c.inputCheckpoint > 180) {
+            c.inputCheckpoint = now;
+            await persistInput(store, c.code, { sender: c.id, stream: c.stream, input, at: now, gameId: c.room.gameId });
+          }
           await store.publish(
             liveChannel(c.code),
             JSON.stringify({
@@ -180,6 +187,11 @@ export function attachLive(server: Server, provided?: Storage) {
             )
           )
             return;
+          // Persist before publishing: a broken subscriber must not freeze the backup connection.
+          if (now - c.checkpoint > 250) {
+            c.checkpoint = now;
+            await persistFrame(store, c.code, c.room.gameId, message.world);
+          }
           await store.publish(
             liveChannel(c.code),
             JSON.stringify({
@@ -189,14 +201,6 @@ export function attachLive(server: Server, provided?: Storage) {
               world: message.world,
             }),
           );
-          if (now - c.checkpoint > 1000) {
-            c.checkpoint = now;
-            await store.set(
-              frameKey(c.code, c.room.gameId),
-              JSON.stringify(message.world),
-              3600,
-            );
-          }
         }
       } catch (error) {
         send({
@@ -209,7 +213,7 @@ export function attachLive(server: Server, provided?: Storage) {
                 ? "Invalid live packet."
                 : "The live relay is temporarily unavailable. Retrying may help.",
         });
-        if (!connection) ws.close(4401, "Could not join the crew.");
+        if (!ready) ws.close(error instanceof ApiError && [401, 404].includes(error.status) ? 4401 : 1013, "Live relay unavailable");
       }
     });
     ws.on("close", () => {

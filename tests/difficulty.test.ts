@@ -15,8 +15,23 @@ function clean(difficulty: Difficulty="lockdown") {
 function run(w:World,seconds:number,input:Partial<Input>={}) {
   for(let t=0;t<seconds-1e-6;t+=.05) stepWorld(w,{p0:{...EMPTY_INPUT,...input}},Math.min(.05,seconds-t));
 }
-test("default Lockdown begins with security and scales guards and armor for a full crew",()=>{
-  const solo=createWorld(seats.slice(0,1),100),crew=createWorld(seats,100),easy=createWorld(seats.slice(0,1),100,"tactical"),hard=createWorld(seats.slice(0,1),100,"nightmare");
+test("Casual is the forgiving default with no starting guards and fast objectives",()=>{
+  const w=createWorld(seats),settings=DIFFICULTIES[w.difficulty];
+  assert.equal(w.difficulty,"casual");assert.equal(w.enemies.length,0);assert.ok(w.spawnTimer>=7);
+  assert.equal(HACK_SECONDS(w.difficulty),1.5);assert.equal(EXTRACT_SECONDS(w.difficulty),2);
+  assert.ok(settings.damage<.5);assert.ok(settings.speed<.8);assert.equal(settings.perimeter,false);
+});
+test("Casual lets a new player hack and extract without a contested-zone lockout",()=>{
+  const w=clean("casual"),p=w.players[0];p.invulnerable=999;
+  Object.assign(p,{x:RELAYS[0].x,z:RELAYS[0].z+1});
+  w.enemies=[{id:100,x:RELAYS[0].x+1,z:RELAYS[0].z,angle:0,hp:30,type:"drone",fire:999,path:[],pathTime:999,hurt:0}];
+  run(w,1.6,{interact:true});assert.equal(w.relays[0].done,true);
+  w.relays.forEach(r=>r.done=true);w.core.carrier=p.id;Object.assign(p,EXTRACTION);
+  w.enemies=[{id:101,x:p.x+2,z:p.z,angle:0,hp:30,type:"drone",fire:999,path:[],pathTime:999,hurt:0}];
+  run(w,2.1);assert.equal(w.status,"won");
+});
+test("optional Lockdown begins with security and scales guards and armor for a full crew",()=>{
+  const solo=createWorld(seats.slice(0,1),100,"lockdown"),crew=createWorld(seats,100,"lockdown"),easy=createWorld(seats.slice(0,1),100,"tactical"),hard=createWorld(seats.slice(0,1),100,"nightmare");
   assert.equal(solo.difficulty,"lockdown");
   assert.ok(solo.enemies.length>=4);
   assert.ok(crew.enemies.length>solo.enemies.length);
@@ -51,9 +66,9 @@ test("extraction cannot be rushed through nearby security; clearing it permits a
   w.enemies=[];p.invulnerable=999;run(w,2.1);assert.equal(w.status,"playing");
   run(w,EXTRACT_SECONDS(w.difficulty));assert.equal(w.status,"won");
 });
-test("standing still without fighting or dodging is a losing strategy on the default difficulty",()=>{
+test("standing still without fighting or dodging remains a losing strategy on optional Lockdown",()=>{
   for(const seed of [4,17,97]) {
-    const w=createWorld(seats.slice(0,1),seed);
+    const w=createWorld(seats.slice(0,1),seed,"lockdown");
     run(w,60);
     assert.equal(w.status,"lost");assert.ok(w.time<60);
   }
@@ -62,8 +77,9 @@ test("the complete threat simulation stays valid for every difficulty and a four
   for(const difficulty of Object.keys(DIFFICULTIES) as Difficulty[]) {
     const w=createWorld(seats,83,difficulty);w.players.forEach(p=>p.invulnerable=999);
     for(let n=0;n<900;n++) {
-      stepWorld(w,Object.fromEntries(seats.map((p,i)=>[p.id,{...EMPTY_INPUT,mx:Math.sin(n/80+i),mz:Math.cos(n/80+i),ax:Math.sin(n/20),az:Math.cos(n/20),shoot:true,dash:Math.floor(n/80)}])),.05);
+      stepWorld(w,Object.fromEntries(seats.map((p,i)=>[p.id,{...EMPTY_INPUT,mx:Math.sin(n/80+i),mz:Math.cos(n/80+i),ax:Math.sin(n/20),az:Math.cos(n/20),shoot:true,dash:Math.floor(n/80),weapon:(Math.floor(n/150)+i)%4 as 0|1|2|3}])),.05);
       assert.ok(validWorld(frame(w),seats.map(p=>p.id)),difficulty+" at frame "+n);
+      if(n%150===0)assert.ok(Buffer.byteLength(JSON.stringify(frame(w)))<90000,"snapshot stays within transport payload limits");
     }
     assert.ok(w.hazards.length>=0);assert.ok(w.enemies.length<=22);
   }

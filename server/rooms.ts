@@ -73,7 +73,7 @@ export function publicRoom(
     hostId: r.hostId,
     phase: r.phase,
     result: r.result,
-    difficulty: isDifficulty(r.difficulty) ? r.difficulty : "lockdown",
+    difficulty: isDifficulty(r.difficulty) ? r.difficulty : "casual",
     selfId,
     players: r.players
       .filter((p) => !p.left || r.phase !== "lobby")
@@ -112,7 +112,7 @@ async function update(
       await store.publish(
         liveChannel(code),
         JSON.stringify({ type: "room", room: publicRoom(r) }),
-      );
+      ).catch(() => { /* The mutation is committed; durable sync can deliver it without pub/sub. */ });
       return r;
     }
     await new Promise((resolve) => setTimeout(resolve, Math.random() * 15));
@@ -162,7 +162,7 @@ export async function roomRequest(
             },
           ],
           result: null,
-          difficulty: isDifficulty(b.difficulty) ? b.difficulty : "lockdown",
+          difficulty: isDifficulty(b.difficulty) ? b.difficulty : "casual",
         };
       if (await store.cas(roomKey(c), null, JSON.stringify(r), 21600))
         return { room: publicRoom(r, id, now), token, id };

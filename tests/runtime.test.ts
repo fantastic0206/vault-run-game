@@ -111,6 +111,18 @@ test("a guest reconnect restores the checkpoint and a missing checkpoint waits f
   } finally {a.game.dispose();b.game.dispose();}
 });
 
+test("a late host checkpoint is restored even if room metadata already started the runtime",()=>{
+  const c=client();
+  try {
+    c.game.coop(room());c.advance();c.tick();
+    const checkpoint=frame(createWorld(seats,9,"lockdown"));checkpoint.tick=5000;checkpoint.time=100;
+    c.game.coop(room(),checkpoint);
+    assert.equal(c.game.world.tick,5000);assert.equal(c.game.world.time,100);
+    c.advance();c.tick();assert.equal(c.game.world.tick,5001);
+    assert.deepEqual(c.faults,[]);
+  } finally{c.game.dispose();}
+});
+
 test("a rendering exception stops safely and exposes a recovery action instead of repeating the crash",()=>{
   const c=client();
   try {
@@ -132,6 +144,8 @@ test("denied gamepad permissions leave mouse, keyboard and touch input available
     controls.stick("move",1,0);
     const input=controls.read(createWorld(seats).players[0]);
     assert.ok(Math.hypot(input.mx,input.mz)>.9);
+    controls.restoreCounters(9);controls.action("dash",true);assert.equal(controls.read(createWorld(seats).players[0]).dash,10);
+    controls.selectWeapon(2);assert.equal(controls.read(createWorld(seats).players[0]).weapon,2);
     controls.dispose();
   } finally {
     if(oldWindow)Object.defineProperty(globalThis,"window",oldWindow);else Reflect.deleteProperty(globalThis,"window");

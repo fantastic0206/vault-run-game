@@ -23,18 +23,19 @@ import {
   type World,
 } from "./types";
 import { DIFFICULTIES, EXTRACT_SECONDS, HACK_SECONDS } from "./balance";
+import { DEFAULT_WEAPON, isWeapon, WEAPONS } from "./weapons";
 
 export const MISSION_SECONDS = 240;
-export const MAGAZINE = 14;
+export const MAGAZINE = WEAPONS[DEFAULT_WEAPON].magazine;
 export function createWorld(
   seats: Pick<Seat, "id" | "name" | "color">[],
   seed = 5347,
-  difficulty: Difficulty = "lockdown",
+  difficulty: Difficulty = "casual",
 ): World {
   if (!seats.length || seats.length > 4)
     throw new Error("A raid needs 1–4 operatives.");
   const w: World = {
-    version: 2,
+    version: 3,
     difficulty,
     tick: 0,
     time: 0,
@@ -47,13 +48,15 @@ export function createWorld(
       health: 100,
       shield: 50,
       ammo: MAGAZINE,
+      weapon: DEFAULT_WEAPON,
+      magazines: WEAPONS.map(w => w.magazine),
       reload: 0,
       fire: 0,
       dashTime: 0,
       dashCooldown: 0,
       lastDash: 0,
       hurt: 0,
-      invulnerable: 1,
+      invulnerable: 3,
       moving: 0,
       kills: 0,
       revive: 0,
@@ -72,12 +75,12 @@ export function createWorld(
     strikeTimer: DIFFICULTIES[difficulty].strike,
     core: { ...CORE, carrier: null },
     nextId: 1,
-    spawnTimer: 1.2,
+    spawnTimer: difficulty === "casual" ? 7 : 2,
     kills: 0,
     extraction: 0,
     seed,
   };
-  spawn(w, DIFFICULTIES[difficulty].guards + Math.max(0, seats.length - 1));
+  spawn(w, DIFFICULTIES[difficulty].guards ? DIFFICULTIES[difficulty].guards + Math.floor(seats.length / 2) : 0);
   return w;
 }
 function random(w: World) {
@@ -93,7 +96,7 @@ export function vaultOpen(w: World) {
 function spawn(w: World, count = 1) {
   const complete = w.relays.filter((r) => r.done).length;
   const balance = DIFFICULTIES[w.difficulty];
-  for (let i = 0; i < count && w.enemies.length < 22; i++) {
+  for (let i = 0; i < count && w.enemies.length < balance.cap; i++) {
     const safe = VENTS.filter((v) => w.players.every((p) => p.health <= 0 || distance(v, p) > 5));
     const choices = safe.length ? safe : VENTS;
     const p = choices[Math.floor(random(w) * choices.length)];
@@ -113,19 +116,26 @@ function spawn(w: World, count = 1) {
   }
 }
 function shoot(w: World, p: Operative, ax: number, az: number) {
+  const weapon = WEAPONS[p.weapon], angle = Math.atan2(ax, az);
+  for (let i = 0; i < weapon.pellets; i++) {
+  const offset = weapon.pellets > 1 ? (i - (weapon.pellets - 1) / 2) * weapon.spread : (random(w) - .5) * weapon.spread;
+  const x = Math.sin(angle + offset), z = Math.cos(angle + offset);
   w.bullets.push({
     id: w.nextId++,
     x: p.x + ax * 0.8,
     z: p.z + az * 0.8,
-    vx: ax * 31,
-    vz: az * 31,
-    life: 1.4,
+    vx: x * weapon.speed,
+    vz: z * weapon.speed,
+    life: weapon.life,
     enemy: false,
     owner: p.id,
-    damage: 18,
+    damage: weapon.damage,
+    weapon: p.weapon,
+    splash: weapon.splash,
   });
+  }
   p.ammo--;
-  p.fire = 0.135;
+  p.fire = weapon.fire;
 }
 export function interactionHint(w: World, id: string): Hint | null {
   const p = w.players.find((p) => p.id === id);
@@ -142,7 +152,7 @@ export function interactionHint(w: World, id: string): Hint | null {
   const relay = w.relays.find((r) => !r.done && distance(p, r) < 2.1);
   if (relay)
     return {
-      text: w.enemies.some((e) => distance(e, relay) < 3.4) ? "CLEAR THE RELAY PERIMETER" : "HOLD STILL · DISABLE RELAY",
+      text: DIFFICULTIES[w.difficulty].perimeter && w.enemies.some((e) => distance(e, relay) < 3.4) ? "CLEAR THE RELAY PERIMETER" : "HOLD STILL · DISABLE RELAY",
       progress: relay.progress / HACK_SECONDS(w.difficulty),
       key: "E",
     };
@@ -150,7 +160,7 @@ export function interactionHint(w: World, id: string): Hint | null {
     return { text: "TAKE THE VAULT CORE", progress: 0, key: "E" };
   if (w.core.carrier === id && distance(p, EXTRACTION) < 2.7)
     return {
-      text: w.enemies.some((e) => distance(e, EXTRACTION) < 5) ? "CLEAR THE EXTRACTION ZONE" : "HOLD POSITION · EXTRACTING",
+      text: DIFFICULTIES[w.difficulty].perimeter && w.enemies.some((e) => distance(e, EXTRACTION) < 5) ? "CLEAR THE EXTRACTION ZONE" : "HOLD POSITION · EXTRACTING",
       progress: w.extraction / EXTRACT_SECONDS(w.difficulty),
       key: "",
     };
@@ -185,6 +195,14 @@ export function stepWorld(
       continue;
     }
     const input = inputs[p.id] ?? EMPTY_INPUT;
+    if (isWeapon(input.weapon) && input.weapon !== p.weapon) {
+      p.magazines[p.weapon] = p.ammo;
+      p.weapon = input.weapon;
+      p.ammo = p.magazines[p.weapon];
+      p.reload = 0;
+      p.fire = Math.max(.16, p.fire);
+    }
+    const weapon = WEAPONS[p.weapon];
     const len = Math.hypot(input.mx, input.mz),
       mx = len > 1 ? input.mx / len : input.mx,
       mz = len > 1 ? input.mz / len : input.mz;
@@ -208,14 +226,15 @@ export function stepWorld(
       p.reload -= dt;
       if (p.reload <= 0) {
         p.reload = 0;
-        p.ammo = MAGAZINE;
+        p.ammo = weapon.magazine;
       }
     }
-    if (!p.reload && ((input.reload && p.ammo < MAGAZINE) || p.ammo === 0))
-      p.reload = 1.2;
+    if (!p.reload && ((input.reload && p.ammo < weapon.magazine) || p.ammo === 0))
+      p.reload = weapon.reload;
     if (input.shoot && p.fire === 0 && !p.reload && p.ammo > 0)
       shoot(w, p, ax, az);
-    if (!p.hurt && p.shield < 50) p.shield = Math.min(50, p.shield + 5 * dt);
+    p.magazines[p.weapon] = p.ammo;
+    if (p.hurt < (w.difficulty === "casual" ? 2 : 0.001) && p.shield < 50) p.shield = Math.min(50, p.shield + (w.difficulty === "casual" ? 12 : 7) * dt);
     if (input.interact) {
       const down = w.players.find(
         (q) => q.id !== p.id && q.health <= 0 && distance(p, q) < 2.1,
@@ -230,31 +249,32 @@ export function stepWorld(
           down.revive = 0;
           effect(w, "heal", down.x, down.z);
         }
-      } else if (relay && !hacking.has(relay.id) && p.moving < 0.15 && p.hurt < 4.25 && !w.enemies.some((e) => distance(e, relay) < 3.4)) {
+      } else if (relay && !hacking.has(relay.id) && p.moving < 0.15 && (!balance.perimeter || (p.hurt < 4.25 && !w.enemies.some((e) => distance(e, relay) < 3.4)))) {
         hacking.add(relay.id);
         relay.progress += dt;
         if (relay.progress >= HACK_SECONDS(w.difficulty)) {
           relay.progress = HACK_SECONDS(w.difficulty);
           relay.done = true;
           effect(w, "hack", relay.x, relay.z);
-          spawn(w, 2 + w.players.length);
+          spawn(w, w.difficulty === "casual" ? 1 : 2 + w.players.length);
         }
       } else if (vaultOpen(w) && !w.core.carrier && distance(p, w.core) < 2.2) {
         w.core.carrier = p.id;
         effect(w, "hack", p.x, p.z);
-        spawn(w, 4 + w.players.length);
+        spawn(w, w.difficulty === "casual" ? 2 : 4 + w.players.length);
       }
     }
     for (const pickup of w.pickups)
-      if (pickup.active && p.health < 100 && distance(p, pickup) < 1) {
-        p.health = Math.min(100, p.health + 40);
+      if (pickup.active && (p.health < 100 || p.shield < 50) && distance(p, pickup) < 1) {
+        p.health = Math.min(100, p.health + (w.difficulty === "casual" ? 70 : 40));
+        p.shield = Math.min(50, p.shield + 25);
         pickup.active = false;
-        pickup.respawn = 55;
+        pickup.respawn = balance.medkit;
         effect(w, "heal", p.x, p.z);
       }
   }
   for (const relay of w.relays)
-    if (!relay.done && !hacking.has(relay.id)) relay.progress = Math.max(0, relay.progress - dt * 0.5);
+    if (balance.perimeter && !relay.done && !hacking.has(relay.id)) relay.progress = Math.max(0, relay.progress - dt * 0.5);
   for (const pickup of w.pickups)
     if (!pickup.active) {
       pickup.respawn -= dt;
@@ -270,10 +290,10 @@ export function stepWorld(
   if (w.spawnTimer <= 0) {
     spawn(
       w,
-      Math.min(4, 1 + Math.floor(w.players.length / 2) + (w.core.carrier ? 1 : 0)),
+      w.difficulty === "casual" ? 1 : Math.min(4, 1 + Math.floor(w.players.length / 2) + (w.core.carrier ? 1 : 0)),
     );
     w.spawnTimer = Math.max(
-      1.15,
+      w.difficulty === "casual" ? 4.5 : 1.15,
       (4.5 - w.relays.filter((r) => r.done).length * 0.65 - w.time / 150) * balance.spawn,
     );
   }
@@ -332,7 +352,7 @@ export function stepWorld(
   w.strikeTimer -= dt;
   if (w.strikeTimer <= 0) {
     const target = alive[Math.floor(random(w) * alive.length)];
-    w.hazards.push({ id: w.nextId++, x: target.x, z: target.z, born: w.time, delay: 1.25, radius: w.difficulty === "tactical" ? 1.7 : 2.15, hit: false });
+    w.hazards.push({ id: w.nextId++, x: target.x, z: target.z, born: w.time, delay: w.difficulty === "casual" ? 1.9 : 1.25, radius: w.difficulty === "casual" || w.difficulty === "tactical" ? 1.7 : 2.15, hit: false });
     w.strikeTimer = Math.max(2.6, balance.strike - w.relays.filter((r) => r.done).length * 0.6 - (w.core.carrier ? 1 : 0));
   }
   for (const hazard of w.hazards) {
@@ -354,7 +374,8 @@ export function stepWorld(
       blocked(to.x, to.z, 0.07, open) ||
       !clearShot(from, to, open)
     ) {
-      effect(w, "hit", to.x, to.z);
+      if (b.splash) blast(w, from, b.splash, b.owner, open);
+      else effect(w, "hit", to.x, to.z);
       continue;
     }
     let hit = false;
@@ -373,15 +394,11 @@ export function stepWorld(
           e.hp > 0 &&
           segmentDistance(from, to, e) < (e.type === "heavy" ? 0.68 : 0.55)
         ) {
-          e.hp -= b.damage;
+          hitEnemy(w, e, b.damage, b.owner);
           e.hurt = 0.15;
           hit = true;
-          effect(w, e.hp <= 0 ? "explosion" : "hit", e.x, e.z);
-          if (e.hp <= 0) {
-            w.kills++;
-            const owner = w.players.find((p) => p.id === b.owner);
-            if (owner) owner.kills++;
-          }
+          if (b.splash) blast(w, e, b.splash, b.owner, open, e.id);
+          else effect(w, e.hp <= 0 ? "explosion" : "hit", e.x, e.z);
           break;
         }
     }
@@ -398,7 +415,7 @@ export function stepWorld(
   if (carrier && carrier.health > 0) {
     w.core.x = carrier.x;
     w.core.z = carrier.z;
-    if (distance(carrier, EXTRACTION) < 2.7 && carrier.hurt < 4.25 && !w.enemies.some((e) => distance(e, EXTRACTION) < 5)) {
+    if (distance(carrier, EXTRACTION) < 2.7 && (!balance.perimeter || (carrier.hurt < 4.25 && !w.enemies.some((e) => distance(e, EXTRACTION) < 5)))) {
       w.extraction += dt;
       if (w.extraction >= EXTRACT_SECONDS(w.difficulty)) {
         w.status = "won";
@@ -406,6 +423,15 @@ export function stepWorld(
       }
     } else w.extraction = Math.max(0, w.extraction - dt * 2);
   } else w.extraction = 0;
+}
+function hitEnemy(w: World, enemy: Enemy, amount: number, owner: string) {
+  if (enemy.hp <= 0) return;
+  enemy.hp -= amount;
+  if (enemy.hp <= 0) { w.kills++; const player = w.players.find(p => p.id === owner); if (player) player.kills++; }
+}
+function blast(w: World, center: {x:number;z:number}, radius: number, owner: string, open: boolean, direct = -1) {
+  effect(w, "nova", center.x, center.z);
+  for (const enemy of w.enemies) if (enemy.id !== direct && enemy.hp > 0 && distance(enemy, center) < radius && clearShot(center, enemy, open)) hitEnemy(w, enemy, 110, owner);
 }
 function damage(w: World, p: Operative, amount: number) {
   const absorbed = Math.min(p.shield, amount);

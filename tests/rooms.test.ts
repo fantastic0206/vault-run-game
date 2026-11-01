@@ -216,7 +216,7 @@ test("anonymous room creation is rate-limited", async () => {
 
 test("the host selects one shared difficulty in the lobby and cannot change it mid-mission",async()=>{
   const {store,host,friend,code}=await crew();
-  assert.equal(host.room.difficulty,"lockdown");
+  assert.equal(host.room.difficulty,"casual");
   await fail(()=>roomRequest({type:"difficulty",code,difficulty:"nightmare"},friend.token!,"ip",store,T),403);
   const updated=await roomRequest({type:"difficulty",code,difficulty:"nightmare"},host.token!,"ip",store,T);
   assert.equal(updated.room.difficulty,"nightmare");

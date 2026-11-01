@@ -3599,3 +3599,43 @@ kbd {
   .weapon-panel > p { display:none; }
   .hero h1 { font-size:clamp(68px,19vw,100px); }
 }
+.difficulty-select > div { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.difficulty-select button { font-size:11px; letter-spacing:.4px; }
+.difficulty-select button:first-child.selected { border-color:#75e3c1; color:#a5f1d5; background:linear-gradient(145deg,#245246e8,#102b30); box-shadow:inset 0 -2px #6fdab4; }
+.difficulty-select button:first-child.selected i { background:#83ecc5; }
+.network-banner { gap:9px; max-width:calc(100vw - 30px); flex-wrap:wrap; justify-content:center; }
+.network-banner button { padding:6px 10px; border:1px solid #e2c388; background:#21364a; color:#ffe4a4; font:700 10px var(--heading); letter-spacing:.8px; pointer-events:auto; border-radius:2px; }
+.loadout-bar { position:absolute; top:115px; left:50%; transform:translateX(-50%); display:flex; gap:5px; padding:5px; background:#051724e8; border:1px solid #7b9cad; box-shadow:0 5px 20px #0005; pointer-events:auto; }
+.loadout-bar button { position:relative; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px; min-width:78px; min-height:48px; padding:7px 8px 7px 25px; border:1px solid #476476; background:#0e2335; color:#92aaba; }
+.loadout-bar button[aria-pressed=true] { color:var(--gun); border-color:var(--gun); background:linear-gradient(125deg,#25445ae0,#0d263a); box-shadow:inset 0 -2px var(--gun); }
+.loadout-bar kbd { position:absolute; left:7px; top:8px; font-size:9px; color:#acc5d4; }
+.loadout-bar strong { font:800 16px var(--heading); letter-spacing:.6px; }
+.loadout-bar small { font:6px var(--mono); letter-spacing:.2px; }
+.loadout-bar button:disabled { opacity:.5; }
+.power-pill { display:inline-block; margin-left:7px; padding:3px 5px; background:#88dcff22; border:1px solid #88dcff88; font:7px var(--mono); color:#b1eaff; letter-spacing:.3px; }
+.gun-3 { border-color:#88dcff; }
+.gun-3 .weapon-silhouette { color:#a7e2ff; }
+.manual-arsenal { border:1px solid #68879b; margin:20px 0; padding:12px; background:#061c2d; display:grid; gap:11px; }
+.manual-arsenal > div { display:grid; grid-template-columns:22px 1fr; gap:3px 9px; align-items:center; }
+.manual-arsenal kbd { grid-row:1/3; color:#f6d08c; font-size:11px; }
+.manual-arsenal strong { font:700 16px var(--heading); letter-spacing:.8px; color:#bde0ed; }
+.manual-arsenal span { font:10px var(--mono); color:#9ab2c1; }
+@media (max-width:999px) {
+  .loadout-bar { top:105px; }
+  .loadout-bar button { min-width:64px; padding:7px 6px 7px 20px; }
+  .loadout-bar strong { font-size:13px; }
+  .loadout-bar small { font-size:5px; }
+  .power-pill { display:none; }
+}
+@media (max-width:660px) {
+  .loadout-bar { top:auto; bottom:142px; gap:4px; padding:4px; }
+  .loadout-bar button { min-height:40px; min-width:65px; padding:6px 6px 6px 18px; }
+  .loadout-bar kbd { left:5px; top:6px; font-size:8px; }
+  .loadout-bar strong { font-size:12px; }
+  .loadout-bar small { font-size:5px; }
+  .difficulty-select button { font-size:11px; }
+}
+@media (max-height:540px) and (min-width:661px) { .loadout-bar { top:91px; }.loadout-bar button { min-height:34px; padding-top:4px; padding-bottom:4px; } }
+.network-banner { top:182px; padding:7px 12px; }
+@media (max-width:660px) { .network-banner { top:75px; padding:5px 9px; font-size:8px; }.network-banner button { padding:4px 7px; }.loadout-bar { bottom:142px; } }
+@media (max-height:540px) and (min-width:661px) { .network-banner { top:139px; padding:5px 10px; font-size:9px; } }

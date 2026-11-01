@@ -2,12 +2,12 @@
 
 This is a separate project from the earlier Vault Run card game. Deploy the **complete `vault-breach-3d` folder** from the ZIP. Do not upload only `PLAY-SOLO.html` or only `dist/` if you want co-op.
 
-## Upgrade an existing game to v1.1
+## Upgrade an existing game to v1.2
 
-1. Replace the repository's game source with this release, including **api**, **server**, **src**, **tests**, both package files, and **vercel.json**. Keep your existing **REDIS_URL** in Vercel.
+1. Replace the repository's game source with this release, including **api/room.ts**, **api/live.ts**, the new **api/sync.ts**, **server**, **src**, **tests**, both package files, and **vercel.json**. Keep your existing **REDIS_URL** in Vercel.
 2. Push the update or redeploy with `npx vercel --prod` from the updated folder. A dashboard redeploy of the old source will not install these fixes.
-3. Have **every player refresh the page**, then create a **fresh room**. v1.1 uses protocol 2 and intentionally rejects old client builds. The home-screen footer must say **V1.1 · LOCKDOWN UPDATE**. `/api/live` reports `version: "1.1.0"` and `protocol: 2`.
-4. Run the acceptance check below, including refreshing a guest during a mission. The old input-counter freeze and stale-rematch-frame handling have automated regression coverage.
+3. Have **every player refresh the page**, then create a **fresh room**. v1.2 uses protocol 3 and intentionally rejects old client builds. The home-screen footer must say **V1.2 · BIG GUNS UPDATE**. `/api/live` reports `version: "1.2.0"` and `protocol: 3`.
+4. Run the acceptance check below, including refreshing a guest during a mission. Both transports, stalled relay recovery, new weapon switching, and guest refresh have automated regression coverage.
 
 ## Fast solo check
 
@@ -22,7 +22,7 @@ Open `PLAY-SOLO.html` after extracting the ZIP. No installation is required for 
    - Output directory: **dist**
    - Node.js: **24.x**
 3. Create the project. Solo play is available as soon as the frontend deployment succeeds.
-4. For co-op, open your Vercel project's **Storage / Marketplace** and connect **[Upstash Redis](https://vercel.com/marketplace/upstash)** or a compatible Redis provider supporting TLS and pub/sub.
+4. For co-op, open your Vercel project's **Storage / Marketplace** and connect **[Upstash Redis](https://vercel.com/marketplace/upstash)** or a compatible Redis provider supporting TLS Redis connections. Pub/sub enables the fast path; durable sync also works when pub/sub delivery is unavailable.
 5. Check **Settings → Environment Variables** for **REDIS_URL**. If the integration does not supply it automatically, copy the database's TLS Redis connection string into that variable for **Production** and **Preview** as appropriate:
 
    ```text
@@ -54,13 +54,13 @@ Create/link the Vercel project, connect Redis and configure REDIS_URL as above, 
 npx vercel --prod
 ```
 
-The standalone HTML can also be hosted as a solo-only static game. Multiplayer needs the complete project and its two server endpoints.
+The standalone HTML can also be hosted as a solo-only static game. Multiplayer needs the complete project and its three server endpoints.
 
 ## Two-device acceptance check
 
 1. Open the Production URL in a private browser session. Confirm the 3D arena renders and **Play Solo** starts immediately.
 2. Move with WASD, aim and fire, reload with R, and dash with Space. Shots must stop at crates. Escape must pause solo play. Resume it.
-3. Choose Tactical for the first acceptance run. Hack the three marked relays by clearing nearby enemies, standing still, and holding E for 3 seconds. The vault door must open after the third relay. Take the core with E and defend the green extraction circle for 4 seconds with no enemy within 5 units. Confirm a victory screen and a working retry button. On Lockdown, hack/extraction take 4.2/6 seconds; on Nightmare, 5/8.
+3. Choose Casual for the first acceptance run. You start with the strongest Nova cannon. Switch guns with 1–4 and check the shotgun spread, minigun rate, and Nova splash. Hack relays by standing still and holding E for 1.5 seconds. Take the core from the open vault and stay in extraction for 2 seconds. Nearby enemies do not block Casual objectives. Confirm victory and retry. Tactical uses 2/3 seconds; Lockdown 4.2/6; Nightmare 5/8, with contested objectives on those modes.
 4. Return to the home screen. Enter the codename **Rook** and create a co-op room.
 5. Open its invite on a second physical device or independently opened browser session. Join as **Ghost**. Confirm that both screens show the same two-person crew and a live link.
 6. Start from the host's screen. Move the two operatives independently. Each device must see the other's movement and shots, and both must share enemy health and relay progress.
@@ -70,6 +70,7 @@ The standalone HTML can also be hosted as a solo-only static game. Multiplayer n
 10. Test refresh/reconnect: refresh a guest tab during a raid. The seat should restore, movement should respond as soon as the first host state arrives, and dash should work without waiting for old counters. Host refresh should resume from its latest checkpoint. If the host stays disconnected for about 18 seconds, the run should end with a regroup message and a remaining player should become squad lead.
 11. Have one guest leave during play. Other clients should continue, with the departed operative downed. On regroup, the departed seat must be removed. Start again with the remaining crew.
 12. Try Lockdown and Nightmare. Check hunter pursuit, armored enemies' three-shot spreads, security-strike warning circles and impacts, hack interruption/decay, and the need to clear extraction. Test **GRAPHICS: LOW** on a slower device.
+13. If a guest stops receiving live updates, confirm the backup connection becomes active and movement/weapon changes still reach the host. Check that POST `/api/sync` succeeds; missing this new function means the update was only partially deployed.
 
 On phones, test both sticks and the ACT, DASH, and LOAD controls. On gamepads, test right-stick aim after moving the mouse at least once. Check frame rate on the devices your friends will actually use.
 
@@ -80,15 +81,17 @@ On phones, test both sticks and the ACT, DASH, and LOAD controls. On gamepads, t
 | Co-op says storage is not connected                                  | Add **REDIS_URL**, using the provider's full `rediss://` URL, then redeploy. Solo needs no Redis.                                                                                |
 | Previous card-game environment variables are present but co-op fails | This action game uses live pub/sub. Add the TLS Redis connection string; REST-only variables cannot provide its transport.                                                       |
 | Lobby never establishes a live link                                  | Check that `/api/live` accepts WebSocket upgrades, current Vercel WebSockets/Fluid compute are enabled, and Redis supports pub/sub. Check deployment protection and server logs. |
-| `/api/room` or `/api/live` returns 404                               | Deploy the complete project, including the root `api/` directory. A static-only upload cannot run co-op.                                                                         |
+| `/api/room`, `/api/live`, or `/api/sync` returns 404                               | Deploy the complete project, including the root `api/` directory. A static-only upload cannot run co-op.                                                                         |
 | Start says to wait for an operative                                  | Allow the player's WebSocket connection and next presence sync to finish. Rejoin if a stale player has closed their tab.                                                         |
 | Disconnected old player occupies a lobby seat                        | Create a new room, or wait 18 seconds before a new join. Stale lobby seats are removed on joining/starting.                                                                      |
 | The host switches away and the game slows                            | Keep the host's browser tab active. Browser background throttling affects the host simulation.                                                                                   |
 | The host leaves entirely                                             | The crew can regroup after the host timeout; a remaining player becomes squad lead. The project does not migrate an in-progress simulation between different players.            |
 | 3D graphics fail to start                                            | Use a current WebGL 2 browser and check hardware acceleration. Older WebGL 1-only browsers are unsupported.                                                                      |
-| Guest controls freeze after a refresh                                | Confirm all clients are running v1.1, refresh every page, and create a fresh room. New connections have independent input streams. |
+| Guest controls freeze after a refresh                                | Confirm all clients are running v1.2, refresh every page, and create a fresh room. New connections have independent input streams. |
 | A guest gets a refresh/version message                               | Frontend and server versions differ. Open the latest production URL, refresh, and create a new room. |
 | Frame rate is low or the graphics context is lost                     | Use **GRAPHICS: LOW** on the home screen, or the low-graphics reload on the recovery screen. |
 | `PLAY-SOLO.html` cannot create rooms                                 | Intentional: it is a self-contained solo preview. Use the complete deployment for co-op.                                                                                         |
 
 Official technical references: [Vercel WebSockets](https://vercel.com/docs/functions/websockets), [Vercel Marketplace storage](https://vercel.com/docs/marketplace-storage), [Upstash integration](https://vercel.com/marketplace/upstash), [Three.js WebGL renderer](https://threejs.org/docs/pages/WebGLRenderer.html).
+
+The source update has not been deployed to your Vercel project from this workspace. Production Redis behavior and browser/GPU rendering still require a live acceptance check.

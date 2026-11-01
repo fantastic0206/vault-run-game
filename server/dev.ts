@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { createServer as createVite } from "vite";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import handler from "../api/room.js";
+import syncHandler from "../api/sync.js";
 import { attachLive } from "./live.js";
 const production = process.argv.includes("--production"),
   port = Number(process.env.PORT ?? 5173);
@@ -16,12 +17,13 @@ const vite = production
     });
 const live = attachLive(server);
 server.on("request", async (req, res) => {
-  if (req.url?.split("?")[0] === "/api/room") {
+  const apiPath = req.url?.split("?")[0];
+  if (apiPath === "/api/room" || apiPath === "/api/sync") {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > 4096) {
+      if (size > (apiPath === "/api/sync" ? 128000 : 4096)) {
         res.writeHead(413);
         res.end('{"error":"Request too large."}');
         return;
@@ -40,7 +42,7 @@ server.on("request", async (req, res) => {
       res.end(JSON.stringify(data));
       return response;
     };
-    await handler(request, response);
+    await (apiPath === "/api/sync" ? syncHandler : handler)(request, response);
     return;
   }
   if (vite) {

@@ -1,81 +1,78 @@
-# Vault Breach 3D · v1.1 Lockdown Update
+# Vault Breach 3D · v1.2 Big Guns Update
 
-A playable **3D action game** for one player or a private crew of **up to four players**. The game uses real-time Three.js geometry, lighting, shadows, animated operatives, drones, projectiles, and effects. The Lockdown Update improves guest reconnects, rebuilds the steel-and-gold art direction, and adds three difficulties with hunters and security strikes. See [CHANGELOG.md](CHANGELOG.md).
+A 3D heist shooter for solo play or a private crew of up to four people. **Casual is now the default**, every gun is unlocked, and everyone starts with the strongest **Nova cannon**. Co-op has a durable backup connection so a broken live relay does not leave guests permanently frozen.
 
-**Updating an existing Vercel deployment:** replace its source with this version, keep your existing **REDIS_URL**, and redeploy. Every player must refresh; create a **new room** after the update. The home-screen footer reads **V1.1 · LOCKDOWN UPDATE**. The live endpoint reports version `1.1.0` and protocol `2`.
+## Update your existing Vercel game
 
-## Try it immediately
+Replace your deployed source with this complete release and redeploy. Keep the existing **REDIS_URL**. Include all three functions: **api/room.ts**, **api/live.ts**, and the new **api/sync.ts**, together with **server**, **src**, both package files, and **vercel.json**.
 
-Extract the ZIP and open **`PLAY-SOLO.html`** in a current Chrome, Edge, Firefox, or Safari browser with WebGL 2 support. Click **Play Solo**. This standalone file bundles the game, its models, styles, and JavaScript; you do not need Node, Redis, or a local web server to play solo.
+A dashboard redeploy of the old repository commit does not install this update. After deployment, every player should refresh and the host should create a fresh room. The footer reads **V1.2 · BIG GUNS UPDATE**; `/api/live` reports version `1.2.0` and protocol `3`.
 
-The standalone file intentionally disables co-op room creation. Use the complete source project and server below for multiplayer. Interface fonts can load from Google Fonts; local fallback fonts work when offline.
+See [DEPLOY.md](DEPLOY.md) for the complete upgrade and two-device check.
+
+## Play solo immediately
+
+Extract the ZIP and open **PLAY-SOLO.html** in a current WebGL 2 browser. No installation, Redis, or web server is needed for solo. The standalone file intentionally disables co-op; deploy the full project for rooms. Fonts can load from Google Fonts, with local fallbacks when offline.
 
 ## The mission
 
-You have **four minutes** to:
+You have four minutes to hack three relays, take the core from the open vault, and bring it to the green extraction circle. Move with WASD, aim and fire with the mouse, dash with Space, hold E to interact, and reload with R.
 
-1. Find and disable **all three security relays**. Clear nearby enemies, stand still close to the terminal, and hold **E**. Taking fire interrupts the hack; abandoned progress decays.
-2. Enter the open vault and press **E** near its glowing core to collect it.
-3. Carry the core back to the **green extraction zone** in the southwest corner. Keep enemies away and defend the carrier for **4, 6, or 8 seconds**, depending on difficulty.
+On **Casual**, hacking takes 1.5 seconds and extraction takes 2 seconds. Nearby enemies do not block either objective. There are no starting guards, a seven-second opening grace period, fewer/slower/weaker enemies, faster shield regeneration, and medkits that restore 70 health plus 25 shield and respawn after 20 seconds. You can still lose if the whole crew goes down or time runs out.
 
-Security is active when the raid starts. Fast hunters close the distance; armored drones fire three-shot spreads. Red targeting circles warn of security strikes: move or dash outside the marked radius before impact. Cover blocks movement and shots. Disabling relays escalates security, and taking the core triggers another wave. The core carrier moves slightly slower.
-
-| Difficulty | Relay hack | Extraction defense | Intended experience |
+| Difficulty | Relay hack | Extraction | Experience |
 | --- | --- | --- | --- |
-| Tactical | 3 seconds | 4 seconds | Learn the route and combat |
-| **Lockdown (default)** | **4.2 seconds** | **6 seconds** | Stronger armor, faster pursuit, frequent strikes |
-| Nightmare | 5 seconds | 8 seconds | Higher pressure, best with a coordinated crew |
+| **Casual · default** | **1.5s** | **2s** | Recommended for a fun first run |
+| Tactical | 2s | 3s | A little more action |
+| Lockdown | 4.2s | 6s | Hard, with contested objectives |
+| Nightmare | 5s | 8s | Extreme, best with a coordinated crew |
 
-The host chooses one shared difficulty for a co-op room. Enemy counts and armor scale with crew size. There are at most 22 active enemies; medkits take 55 seconds to respawn.
+The host sets one shared difficulty in the lobby. Tactical and above require a clear perimeter to hack/extract; moving or recent damage interrupts hacking and abandoned progress decays. Red circles warn of an incoming strike: move or dash outside before impact. A living teammate can hold E near a downed operative for 2 seconds to revive. Friendly fire is off.
 
-The crew wins together when the core is extracted. The mission fails if every operative is down or the lockdown timer reaches zero. A living teammate can hold E near a downed operative for two seconds to revive them. There is no friendly fire.
+## Four guns, all unlocked
 
-## Controls
+| Key | Gun | Damage per shot | Magazine | Role |
+| --- | --- | --- | --- | --- |
+| 1 | Pulse carbine | 28 | 24 | Accurate automatic fire |
+| 2 | Thunder shotgun | 20 × 7 pellets | 8 | Close-range spread |
+| 3 | Cyclone minigun | 24 | 90 | Rapid sustained fire |
+| **4** | **Nova cannon · strongest, equipped at spawn** | **260 direct + 110 nearby splash** | **12** | **Destroys armored targets and groups** |
 
-| Action                  | Keyboard / mouse       | Phone            | Standard gamepad     |
-| ----------------------- | ---------------------- | ---------------- | -------------------- |
-| Move                    | WASD or arrow keys     | Left stick       | Left stick           |
-| Aim                     | Mouse                  | Right stick      | Right stick          |
-| Fire                    | Hold left mouse button | Drag right stick | Right trigger        |
-| Dash                    | Space                  | DASH             | A                    |
-| Hack, take core, revive | Hold E                 | Hold ACT         | Hold Y               |
-| Reload                  | R                      | LOAD             | X                    |
-| Pause / menu            | Escape                 | Pause icon       | On-screen pause icon |
-| Sound                   | M or speaker icon      | Speaker icon     | Speaker icon         |
-| Fullscreen              | F or fullscreen icon   | Fullscreen icon  | Fullscreen icon      |
+Reserve ammunition is unlimited. Each gun keeps its own magazine when switching. Reloading uses the selected gun's reload time; switching cannot refill magazines or bypass the previous shot's cooldown. Nova splash affects enemies and respects cover; it does not hurt the crew. Each gun has a distinct held model and projectile color.
 
-Your pulse carbine has a **14-round magazine** and unlimited reserve ammunition. Empty magazines reload automatically; manual reload takes 1.2 seconds. Dashes briefly protect against damage and recharge in 2.4 seconds. Shields recharge after 4.5 seconds without damage; green medkits restore health.
+| Action | Keyboard / mouse | Phone | Standard gamepad |
+| --- | --- | --- | --- |
+| Move | WASD / arrows | Left stick | Left stick |
+| Aim / fire | Mouse / hold left click | Drag right stick | Right stick / RT |
+| Dash | Space | DASH | A |
+| Hack, collect, revive | Hold E | Hold ACT | Hold Y |
+| Reload | R | LOAD | X |
+| Switch gun | 1 / 2 / 3 / 4 | Tap a gun slot | B cycles guns |
+| Menu | Escape | Pause button | Pause button on screen |
+| Sound / fullscreen | M / F | HUD buttons | HUD buttons |
 
-Sound starts muted and can be enabled explicitly. The menu camera stops orbiting when reduced motion is requested. Solo pause freezes the simulation; co-op continues while the local menu is open. Use **GRAPHICS: LOW** on the home screen for slower devices; it disables bloom, shadows, and antialiasing and limits pixel ratio. Low graphics is selected automatically for touch devices and devices reporting less than 6 GB RAM. A graphics failure offers a low-graphics reload.
+Sound starts muted. Solo pause stops the simulation; a co-op menu does not pause the crew. Low graphics disables bloom, shadows and antialiasing and limits resolution. It is selected automatically for touch devices and devices reporting under 6 GB RAM. Change graphics from the home screen or use the recovery screen's low-graphics reload.
 
-The environment now includes painted steel floor plates, reinforced gold-strapped crates, layered wall panels and lamps, a detailed vault assembly, floor light pools, gold/teal/purple/coral helmets, floating crew labels, bloom on high graphics, and framed combat panels. It follows the illustrated concepts' art direction; those illustrations were not captures of the running game.
+## How co-op recovers from a frozen connection
 
-## Run the complete project locally
+WebSockets deliver fast input and frames when available. **/api/sync** uses the same Redis database to persist the latest world and each guest's controls, independently of pub/sub. The host maintains a backup sync; guests use it automatically if live frames stop or upgrades are blocked. Recovery requests are serialized and paced, and the banner shows when backup sync is active. Backup play can have more latency than the live connection.
 
-Requires **Node.js 24** and npm.
+Room joins remain committed and return valid credentials even if publishing a notification fails. Socket authentication failures caused by an unavailable relay are retryable. Checkpoints cannot be overwritten by older frames, and a late checkpoint can restore an already-started host runtime. Controls share one stream identity across both transports, so they do not fight each other. Guest refresh, departed members, rematches, old builds, malformed frames and stale inputs are handled explicitly.
+
+The **host browser still runs the simulation**. Keep it open and active. The backup connection cannot run a closed or suspended host browser. If the host disappears for about 18 seconds, the run ends and a connected member can lead the regroup. This is a casual co-op game, not a competitive anti-cheat server.
+
+## Run the full project locally
+
+Requires Node.js 24 and npm:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. To test co-op locally, create a room in one independently opened tab and join its six-character code from another tab. Up to four clients can join. The host clicks **Breach the Vault** after every player's live link is established. A host can start with one player too.
+Open `http://localhost:5173`. Create a room in one browser session and join from an independent session or another device. Without Redis, development uses a single-process memory store. Production requires the secure Redis connection string in **REDIS_URL**; the old card game's REST URL/token pair is not sufficient.
 
-For two physical devices on the same LAN, open your development computer's LAN address at port 5173 on both devices, allowing access to that port if needed. Use a public deployment for players on different networks.
-
-Without Redis, local development uses an in-process room store and relay. This is for one local Node process and resets when that process stops. Production refuses this fallback. To test with shared Redis locally, copy `.env.example` to `.env.local` and enter your secure **REDIS_URL** connection string.
-
-## Deploy to Vercel
-
-See **[DEPLOY.md](DEPLOY.md)**. Solo works immediately after deploying the frontend. Co-op uses Vercel WebSockets plus Redis pub/sub and needs **REDIS_URL**. The earlier card game's `KV_REST_API_URL` and `KV_REST_API_TOKEN` pair alone is not sufficient for this action game.
-
-This is a host-simulated casual co-op game. The host's browser runs the mission; the server authenticates room membership, accepts world frames only from the host, validates messages, and relays them across Function instances. Keep the host's game open and active. If the host is gone for approximately 18 seconds, the run ends and a connected player becomes squad lead so the crew can regroup. This is not a competitive anti-cheat server.
-
-The client automatically reconnects after a transport interruption or Function rotation. A host refresh can recover the latest stored world checkpoint, saved about once a second. A refreshed guest receives a new authenticated input-stream ID, so its reset input and dash counters are accepted immediately. Guests wait for host state and reject mismatched missions, old builds, malformed frames, old input streams, and frames with a wrong roster. A departing guest remains in the running mission's fixed roster as downed, then is removed on regroup. On an unstable network, a small amount of progress can be replayed from the checkpoint.
-
-Redis and Vercel usage depend on active co-op traffic; the chosen plans' quotas apply. Solo generates no game-server traffic. Do not deploy only the static frontend and expect co-op rooms to work.
-
-## Validation and builds
+## Checks and builds
 
 ```bash
 npm test
@@ -83,41 +80,25 @@ npm run build
 npm run demo
 ```
 
-Tests cover the complete hack–collect–extract mission, defeat conditions, combat, continuous collision, dashes, ammo, shields, revives, pickups, pathfinding, sustained simulation, input validation, room authorization, concurrency, and actual WebSocket traffic between two separate server instances with a shared relay. Checkpoint recovery and forged-client rejection are included.
+**54 automated tests pass**, including real client transport/runtime integration across two HTTP/WebSocket servers with four seats, guest refresh, leaving, rematch, every pub/sub message dropped, publish/subscribe rejected, and WebSocket upgrades blocked. Tests verify weapon patterns, damage, splash, magazines/reloads, easier Casual objectives, all difficulty levels, frame payload bounds, authorization, stale-state rejection, and late checkpoint recovery. Graphics/control adapters are stubbed in runtime tests; these are not browser/GPU tests.
 
-All **39 tests** pass. Tests include the actual client network class and mission runtime for one host plus three guests across two independent HTTP/WebSocket servers: guest refresh and immediate control recovery, a guest leaving, finish, and rematch. They also cover old input streams, malformed frames, subscription/start races, protocol mismatch, blocked gamepad permissions, error recovery, all difficulty levels, telegraphed strikes, contested hacking/extraction, and sustained four-player combat. Graphics and input-device adapters are stubbed in the runtime tests; these are not browser/GPU tests.
+The production build, standalone HTML, compiled Vercel endpoints, and server-rendered menu/HUD checks pass. `npm run build` creates `dist`; `npm run demo` regenerates PLAY-SOLO.html; `npm run preview` serves the built frontend with the same API locally.
 
-The production frontend build, standalone HTML build, and compiled Vercel room and WebSocket authentication checks also pass.
-
-`npm run build` makes `dist/`. `npm run demo` regenerates the self-contained `PLAY-SOLO.html`. `npm run preview` runs the built frontend and the same server API locally.
-
-The build workspace's preview service was unavailable. Browser appearance, WebGL shader output, real-device frame rate, touch controls, gamepad behavior, and a live Vercel/Redis deployment remain unverified. Complete the two-device acceptance check in DEPLOY.md before sharing a production URL.
+The workspace preview relay is unavailable. Browser/GPU appearance, real-device performance/controls, the user's live Redis provider, and the live Vercel deployment remain unverified. No live Vercel URL or deployment access was supplied. Use DEPLOY.md's acceptance check after updating the source.
 
 ## Source map
 
-```text
-src/game/simulation.ts   Host/solo simulation, combat, mission, victory/defeat
-src/game/map.ts          Arena, collision, visibility, pathfinding
-src/game/scene.ts        Procedural 3D environment, characters, effects, camera
-src/game/art.ts          Steel textures, glow textures, automatic graphics quality
-src/game/balance.ts      Shared difficulty settings and mission interaction times
-src/game/controls.ts     Keyboard, pointer, touch, and gamepad input
-src/game/runtime.ts      Fixed-interval gameplay and rendering/network hooks
-src/game/audio.ts        Optional synthesized sound effects
-src/game/validate.ts     Shared network message validation
-src/main.tsx             Menus, lobby, HUD, minimap, touch pads, results
-src/network.ts           Room API, authenticated WebSocket, reconnects
-server/rooms.ts          Private room membership and mission lifecycle
-server/live.ts           WebSocket relay, authority checks, checkpoints
-server/storage.ts        Redis pub/sub + CAS; local-only memory implementation
-api/room.ts              Vercel room endpoint
-api/live.ts              Vercel HTTP server with WebSocket upgrade
-server/dev.ts            Local Vite / built-asset server with same endpoints
-scripts/build-demo.mjs   Self-contained solo HTML build
-tests/                   Simulation, room, and live-transport tests
-PLAY-SOLO.html           Ready-to-open solo game
-```
+- `src/game/simulation.ts`: mission, combat, splash, weapons, victory/defeat
+- `src/game/weapons.ts`: four gun definitions and the strongest starting weapon
+- `src/game/balance.ts`: difficulty and objective times
+- `src/game/map.ts`: collision, cover and pathfinding
+- `src/game/scene.ts`, `art.ts`: real 3D geometry, models, textures and lighting
+- `src/game/runtime.ts`, `controls.ts`: simulation lifecycle and device input
+- `src/network.ts`: live transport, frame watchdog and backup sync
+- `server/sync.ts`: authenticated durable frames and controls
+- `server/live.ts`, `rooms.ts`, `storage.ts`: relay, room lifecycle and shared storage
+- `api/room.ts`, `api/live.ts`, `api/sync.ts`: deployable Vercel functions
+- `src/main.tsx`, `style.css`: menus, lobby, HUD, arsenal and recovery
+- `tests/`: game, network, recovery and weapon regressions
 
-All 3D models, textures, environment markings, and effects are generated by code. There are no external model downloads or paid image/game APIs.
-
-MIT license. Dependencies retain their respective licenses.
+All models, textures and effects are generated by code. MIT license; dependencies retain their licenses. The earlier illustrated previews were art-direction concepts, not captures of the running game.

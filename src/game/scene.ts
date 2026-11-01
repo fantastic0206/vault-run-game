@@ -7,6 +7,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { WEAPONS, type WeaponId } from "./weapons";
 
 interface Rig {
   group: THREE.Group;
@@ -15,6 +16,8 @@ interface Rig {
   body: THREE.Mesh;
   target: THREE.Vector3;
   label?: THREE.Sprite;
+  gun?: THREE.Group;
+  weapon?: WeaponId;
 }
 const v3 = new THREE.Vector3();
 export class Battlefield {
@@ -491,9 +494,6 @@ export class Battlefield {
       legR = this.box(0.2, 0.52, 0.24, "#25384c", 0.2, 0.32, 0, g);
     this.box(0.25, 0.16, 0.38, "#132132", -0.2, 0.08, 0.08, g);
     this.box(0.25, 0.16, 0.38, "#132132", 0.2, 0.08, 0.08, g);
-    this.box(0.18, 0.2, 0.7, "#8b9ba4", 0.3, 1.03, 0.62, g);
-    this.box(0.12, 0.13, 0.4, "#202c3b", 0.3, 1.03, 1.06, g);
-    this.box(0.05, 0.05, 0.25, c, 0.3, 1.13, 0.66, g, true);
     const flash = new THREE.Mesh(
       new THREE.OctahedronGeometry(0.22, 0),
       this.material("#ffe7a3", true),
@@ -510,6 +510,28 @@ export class Battlefield {
       flash,
       target: new THREE.Vector3(),
     };
+  }
+  private equipModel(rig: Rig, weapon: WeaponId) {
+    if (rig.weapon === weapon) return;
+    if (rig.gun) { rig.gun.traverse(o => { if(o instanceof THREE.Mesh)o.geometry.dispose(); }); rig.group.remove(rig.gun); }
+    const gun = rig.gun = new THREE.Group(), color = WEAPONS[weapon].color;
+    rig.weapon = weapon; rig.group.add(gun);
+    this.box(weapon === 3 ? .44 : .25,.24,.65,"#334b61",.3,1.03,.63,gun);
+    this.box(.12,.22,.18,"#172638",.3,.85,.58,gun);
+    this.box(.08,.06,.42,color,.3,1.17,.65,gun,true);
+    if (weapon === 0) {
+      this.box(.12,.14,.55,"#7d939f",.3,1.03,1.08,gun);
+      this.box(.2,.08,.2,"#182735",.3,1.22,.68,gun);
+    } else if (weapon === 1) {
+      for(const x of [.19,.41]) this.box(.12,.13,.72,"#b5a28a",x,1.03,1,gun);
+      this.box(.31,.12,.22,color,.3,1.03,.78,gun);
+    } else if (weapon === 2) {
+      const rotor=new THREE.Group();rotor.position.set(.3,1.03,1.02);gun.add(rotor);gun.userData.rotor=rotor;
+      for(let i=0;i<4;i++){const a=i/4*Math.PI*2;const barrel=this.cylinder(.055,.65,"#a1a8b1",Math.cos(a)*.105,Math.sin(a)*.105,0,rotor);barrel.rotation.x=Math.PI/2;}
+    } else {
+      const barrel=this.cylinder(.2,.8,"#4e708a",.3,1.03,.99,gun);barrel.rotation.x=Math.PI/2;
+      for(const z of [.72,1.12,1.35]) { const ring=new THREE.Mesh(new THREE.TorusGeometry(.22,.035,8,20),this.material(color,true));ring.position.set(.3,1.03,z);gun.add(ring); }
+    }
   }
   private glowDisc(radius: number, color: string, x: number, z: number) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(radius*2,radius*2), new THREE.MeshBasicMaterial({map:this.glow,color,transparent:true,opacity:.34,blending:THREE.AdditiveBlending,depthWrite:false}));
@@ -707,6 +729,8 @@ export class Battlefield {
         rig.label = this.label(p.name.toUpperCase(),COLORS[p.color],Math.min(3, 1.2+p.name.length*.06)); rig.label.position.set(0,2.35,0); rig.group.add(rig.label);
         this.actors.set(p.id, rig);
       }
+      this.equipModel(rig, p.weapon);
+      if (rig.gun?.userData.rotor) (rig.gun.userData.rotor as THREE.Group).rotation.z=t*30;
       let tx = p.x,
         tz = p.z;
       if (guest && p.id === selfId && input && p.health > 0) {
@@ -727,7 +751,9 @@ export class Battlefield {
       rig.group.rotation.z = p.health > 0 ? 0 : Math.PI / 2;
       rig.legs[0].rotation.x = Math.sin(t * 14) * p.moving * 0.6;
       rig.legs[1].rotation.x = -Math.sin(t * 14) * p.moving * 0.6;
-      rig.flash.visible = p.fire > 0.09 && p.health > 0;
+      rig.flash.visible = p.fire > WEAPONS[p.weapon].fire * .48 && p.health > 0;
+      rig.flash.material = this.material(WEAPONS[p.weapon].color, true);
+      rig.flash.scale.setScalar(p.weapon === 3 ? 1.65 : p.weapon === 1 ? 1.1 : .65);
       rig.flash.rotation.z = t * 31;
       (rig.body.material as THREE.MeshStandardMaterial).emissive.set(
         p.hurt > 4.3 ? "#8b3524" : "#000000",
@@ -772,6 +798,8 @@ export class Battlefield {
         this.bullets.set(b.id, mesh);
       }
       mesh.position.set(b.x, b.enemy ? 1.3 : 1.06, b.z);
+      mesh.material = this.material(b.enemy ? "#ff875f" : WEAPONS[b.weapon ?? 0].color, true);
+      mesh.scale.set(b.weapon === 3 ? 3.2 : 1, b.weapon === 3 ? 1.4 : b.weapon === 1 ? .65 : 1, b.weapon === 3 ? 3.2 : 1);
       mesh.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
         new THREE.Vector3(b.vx, 0, b.vz).normalize(),
@@ -815,14 +843,14 @@ export class Battlefield {
       if (!g) {
         g = new THREE.Group();
         g.position.set(e.x, 0.9, e.z);
-        const count = e.kind === "explosion" ? 12 : 6;
+        const count = e.kind === "nova" ? 20 : e.kind === "explosion" ? 12 : 6;
         for (let i = 0; i < count; i++) {
           const m = new THREE.Mesh(
             this.particleGeometry,
             this.material(
               e.kind === "heal"
                 ? "#76e2ba"
-                : e.kind === "hack"
+                : e.kind === "nova" ? "#8bdfff" : e.kind === "hack"
                   ? "#bc92ed"
                   : "#ffd17e",
               true,
@@ -839,9 +867,9 @@ export class Battlefield {
       for (const child of g.children) {
         const angle = child.userData.angle;
         child.position.set(
-          Math.cos(angle) * age * 3,
+          Math.cos(angle) * age * (e.kind === "nova" ? 6 : 3),
           age * child.userData.height * 3 - age * age * 3,
-          Math.sin(angle) * age * 3,
+          Math.sin(angle) * age * (e.kind === "nova" ? 6 : 3),
         );
         child.scale.setScalar(Math.max(0, 1 - age / 0.7));
       }

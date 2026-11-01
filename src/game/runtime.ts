@@ -4,6 +4,7 @@ import { createWorld, frame, stepWorld } from "./simulation";
 import { sound } from "./audio";
 import { EMPTY_INPUT, type Difficulty, type Input, type Room, type World } from "./types";
 import { sanitizeInput, validWorld } from "./validate";
+import { DEFAULT_WEAPON } from "./weapons";
 
 export interface RuntimeCallbacks {
   hud: (w: World) => void;
@@ -43,6 +44,7 @@ export class Runtime {
   private ended = false;
   private effects = new Set<number>();
   private lastAmmo = 14;
+  private lastWeapon = DEFAULT_WEAPON;
   private roster: string[] = [];
   private failed = false;
   constructor(canvas: HTMLCanvasElement, options: { view?: Battlefield; controls?: Controls; autoStart?: boolean; now?: () => number } = {}) {
@@ -78,7 +80,7 @@ export class Runtime {
       );
     } catch (error) { this.fail(error); }
   }
-  solo(name: string, difficulty: Difficulty = "lockdown") {
+  solo(name: string, difficulty: Difficulty = "casual") {
     this.awaitingFrame = false;
     this.multiplayer = false;
     this.authority = true;
@@ -92,13 +94,20 @@ export class Runtime {
     this.begin();
   }
   coop(room: Room, checkpoint?: World | null) {
-    if (this.active && this.gameId === room.gameId) return;
     if (!room.players.some((p) => p.id === room.selfId)) return;
+    const cached = checkpoint && validWorld(checkpoint, room.players.map((p) => p.id)) && checkpoint.difficulty === room.difficulty ? checkpoint : null;
+    if (this.active && this.gameId === room.gameId) {
+      if (cached && this.authority && cached.tick > this.world.tick && cached.time >= this.world.time && !this.ended) {
+        this.world = cached;
+        this.controls.restoreCounters?.(cached.players.find(p => p.id === this.selfId)?.lastDash ?? 0);
+        this.publishHud();
+      } else if (cached && !this.authority) this.remoteFrame(room.gameId, cached);
+      return;
+    }
     this.multiplayer = true;
     this.selfId = room.selfId;
     this.authority = room.hostId === room.selfId;
     this.gameId = room.gameId;
-    const cached = checkpoint && validWorld(checkpoint, room.players.map((p) => p.id)) && checkpoint.difficulty === room.difficulty ? checkpoint : null;
     this.world =
       cached ??
       createWorld(
@@ -125,7 +134,10 @@ export class Runtime {
     this.streams = {};
     this.effects.clear();
     this.last = this.clock();
-    this.lastAmmo = 14;
+    const self = this.world.players.find(p => p.id === this.selfId);
+    this.lastAmmo = self?.ammo ?? 12;
+    this.lastWeapon = self?.weapon ?? DEFAULT_WEAPON;
+    this.controls.restoreCounters?.(self?.lastDash ?? 0);
     this.frameTime = 0;
     this.inputTime = 0;
     this.callbacks.hud(frame(this.world));
@@ -206,7 +218,7 @@ export class Runtime {
     if (this.authority && (!this.paused || this.multiplayer)) {
       const activeInputs = { ...this.inputs };
       for (const id of Object.keys(activeInputs))
-        if (id !== this.selfId && now - (this.inputAt[id] ?? 0) > 350)
+        if (id !== this.selfId && now - (this.inputAt[id] ?? 0) > 1000)
           activeInputs[id] = { ...EMPTY_INPUT, dash: activeInputs[id].dash };
       stepWorld(this.world, activeInputs, dt);
       this.handleEffects();
@@ -237,13 +249,13 @@ export class Runtime {
   }
   private handleEffects() {
     const p = this.world.players.find((p) => p.id === this.selfId);
-    if (p && p.ammo < this.lastAmmo) sound("shoot");
-    if (p) this.lastAmmo = p.ammo;
+    if (p && p.weapon === this.lastWeapon && p.ammo < this.lastAmmo) sound("shoot");
+    if (p) { this.lastAmmo = p.ammo; this.lastWeapon = p.weapon; }
     for (const e of this.world.effects)
       if (!this.effects.has(e.id)) {
         this.effects.add(e.id);
         if (e.kind !== "hit" || (p && Math.hypot(e.x - p.x, e.z - p.z) < 1))
-          sound(e.kind);
+          sound(e.kind === "nova" ? "explosion" : e.kind);
       }
     if (this.effects.size > 200)
       this.effects = new Set(this.world.effects.map((e) => e.id));

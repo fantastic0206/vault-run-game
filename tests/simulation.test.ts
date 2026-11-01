@@ -108,7 +108,7 @@ test("WASD direction follows the angled camera and line/box collision is continu
 });
 test("shooting consumes the magazine, automatic reload restores it, and reserve ammo is unlimited", () => {
   const w = world();
-  for (let i = 0; i < 80 && w.players[0].ammo > 0; i++)
+  for (let i = 0; i < 400 && w.players[0].ammo > 0; i++)
     tick(w, 0.05, { shoot: true, ax: 1, az: 0 });
   tick(w, 0.05);
   assert.equal(w.players[0].ammo, 0);

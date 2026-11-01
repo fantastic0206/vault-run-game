@@ -45,7 +45,6 @@ import { enableSound, sound } from "./game/audio";
 import { CORE, EXTRACTION, OBSTACLES, RELAYS } from "./game/map";
 import {
   interactionHint,
-  MAGAZINE,
   MISSION_SECONDS,
   vaultOpen,
 } from "./game/simulation";
@@ -53,6 +52,7 @@ import { COLORS, type Room, type Session, type World } from "./game/types";
 import type { Difficulty } from "./game/types";
 import { DIFFICULTIES, EXTRACT_SECONDS, HACK_SECONDS } from "./game/balance";
 import { graphicsQuality } from "./game/art";
+import { WEAPONS, type WeaponId } from "./game/weapons";
 import { CrewLink, NetworkError, roomApi } from "./network";
 import "./style.css";
 
@@ -67,7 +67,7 @@ function savedSeat(): Session | null {
     const s = JSON.parse(
       sessionStorage.getItem("vault-breach-seat-v1") ?? "null",
     );
-    return s && /^[A-Z2-9]{6}$/.test(s.code) && /^[a-f0-9]{64}$/.test(s.token)
+    return s && typeof s.id === "string" && s.id.length > 0 && s.id.length < 100 && /^[A-Z2-9]{6}$/.test(s.code) && /^[a-f0-9]{64}$/.test(s.token)
       ? s
       : null;
   } catch {
@@ -121,7 +121,7 @@ function App() {
     [connectionError, setConnectionError] = useState(""),
     [webglError, setWebglError] = useState("");
   const [runtimeError, setRuntimeError] = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty>("lockdown");
+  const [difficulty, setDifficulty] = useState<Difficulty>("casual");
   const [busy, setBusy] = useState(false),
     busyRef = useRef(false),
     [paused, setPaused] = useState(false),
@@ -204,6 +204,7 @@ function App() {
   useEffect(() => {
     if (!seat) return;
     let active = true;
+    let syncBusy = false, syncQueued = false;
     const crew = new CrewLink(seat, {
       room: (r, w) => {
         if (active) callbacks.current.acceptRoom(r, w);
@@ -212,19 +213,24 @@ function App() {
       input: (gameId, id, input, stream) => { if (active) runtime.current?.remoteInput(gameId, id, input, stream); },
       status: (connected, message, terminal) => {
         if (active) {
+          const wasConnected = liveRef.current;
           liveRef.current = connected;
           setLive(connected);
           setConnectionError(message);
           if (terminal) setError(message);
-          if (connected) void sync();
+          if (connected && !wasConnected) void sync();
         }
       },
     });
     link.current = crew;
     const sync = async () => {
+      if (!active || seatRef.current?.token !== seat.token) return;
+      if (syncBusy) { syncQueued = true; return; }
+      syncBusy = true;
+      const healthy = crew.live;
       try {
         const data = await roomApi(
-          { type: "sync", code: seat.code, live: crew.live },
+          { type: "sync", code: seat.code, live: healthy },
           seat.token,
         );
         if (active) callbacks.current.acceptRoom(data.room);
@@ -234,8 +240,11 @@ function App() {
           if ([401, 404].includes(err.status)) {
             clearCrew();
             setError(err.message);
-          } else setConnectionError(err.message);
+          } else if (!crew.live) setConnectionError(err.message);
         }
+      } finally {
+        syncBusy = false;
+        if (active && (syncQueued || healthy !== crew.live)) { syncQueued = false; void sync(); }
       }
     };
     void sync();
@@ -552,14 +561,16 @@ function App() {
             onFullscreen={fullscreen}
             soundOn={soundOn}
             onSound={toggleSound}
+            onWeapon={(weapon) => runtime.current?.controls.selectWeapon(weapon)}
           />
           {hud.status === "playing" && !paused && (
             <TouchControls runtime={runtime.current} />
           )}{" "}
           {seat && (!live || connectionError || runtime.current?.awaitingFrame) && (
-            <div className="network-banner">
+            <div className="network-banner" role="status">
               <WifiOff size={14} />
               {connectionError || (runtime.current?.awaitingFrame ? "Synchronizing mission with the squad lead…" : "Reconnecting to the crew…")}
+              <button onClick={() => link.current?.resync()}>RECONNECT</button>
             </div>
           )}
           {hud.status === "playing" && paused && (
@@ -700,7 +711,7 @@ function App() {
 function DifficultySelect({ value, onChange, disabled = false }: { value: Difficulty; onChange: (value: Difficulty) => void; disabled?: boolean }) {
   return <div className="difficulty-select"><span className="eyebrow">THREAT LEVEL</span><div role="group" aria-label="Mission difficulty">{(Object.keys(DIFFICULTIES) as Difficulty[]).map((key, i) => <button key={key} aria-pressed={value === key} disabled={disabled} className={value === key ? "selected" : ""} onClick={() => onChange(key)}><span>{Array.from({length:i+1}, (_, n) => <i key={n}/>)}</span>{DIFFICULTIES[key].name}</button>)}</div><p>{DIFFICULTIES[value].subtitle}</p></div>;
 }
-function MissionBrief({ difficulty = "lockdown" }: { difficulty?: Difficulty }) {
+function MissionBrief({ difficulty = "casual" }: { difficulty?: Difficulty }) {
   return (
     <div className="mission-brief">
       <div>
@@ -708,7 +719,7 @@ function MissionBrief({ difficulty = "lockdown" }: { difficulty?: Difficulty }) 
         <Target size={17} />
         <p>
           <strong>DISABLE SECURITY</strong>
-          <small>Clear each relay. Hold still + E for {HACK_SECONDS(difficulty)}s.</small>
+          <small>{DIFFICULTIES[difficulty].perimeter ? "Clear each relay. " : "Find the marked relays. "}Hold still + E for {HACK_SECONDS(difficulty)}s.</small>
         </p>
       </div>
       <div>
@@ -725,7 +736,7 @@ function MissionBrief({ difficulty = "lockdown" }: { difficulty?: Difficulty }) 
         <p>
           <strong>MAKE THE GETAWAY</strong>
           <small>
-            Clear extraction. Defend the core for {EXTRACT_SECONDS(difficulty)} seconds.
+            {DIFFICULTIES[difficulty].perimeter ? "Clear extraction. " : "Reach the green circle. "}Hold the core for {EXTRACT_SECONDS(difficulty)} seconds.
           </small>
         </p>
       </div>
@@ -962,7 +973,7 @@ function Home({
           GET IN. GET OUT. GET RICH.
         </span>
         <span>WASD TO MOVE · MOUSE TO AIM · SPACE TO DASH</span>
-        <span>V1.1 · LOCKDOWN UPDATE</span>
+        <span>V1.2 · BIG GUNS UPDATE</span>
       </footer>
     </div>
   );
@@ -1072,6 +1083,7 @@ function GameHUD({
   onFullscreen,
   soundOn,
   onSound,
+  onWeapon,
 }: {
   world: World;
   selfId: string;
@@ -1080,6 +1092,7 @@ function GameHUD({
   onFullscreen: () => void;
   soundOn: boolean;
   onSound: () => void;
+  onWeapon?: (weapon: WeaponId) => void;
 }) {
   const self = world.players.find((p) => p.id === selfId) ?? world.players[0],
     done = world.relays.filter((r) => r.done).length,
@@ -1092,6 +1105,7 @@ function GameHUD({
         : !carrier
           ? "SEIZE THE VAULT CORE"
           : "REACH EXTRACTION";
+  const gun = WEAPONS[self.weapon];
   return (
     <div className="game-hud">
       <header className="hud-top">
@@ -1211,8 +1225,8 @@ function GameHUD({
           <strong>{Math.ceil(self.shield)}</strong>
         </div>
       </div>
-      <div className="weapon-panel">
-        <span>VX-14 PULSE CARBINE</span>
+      <div className={`weapon-panel gun-${self.weapon}`}>
+        <span>{gun.name}{self.weapon === 3 && <b className="power-pill">STRONGEST</b>}</span>
         <div>
           <strong>{self.ammo.toString().padStart(2, "0")}</strong>
           <i>/ ∞</i>
@@ -1228,10 +1242,13 @@ function GameHUD({
         <div className="reload-track">
           <i
             style={{
-              width: `${self.reload > 0 ? (1 - self.reload / 1.2) * 100 : (self.ammo / MAGAZINE) * 100}%`,
+              width: `${self.reload > 0 ? (1 - self.reload / gun.reload) * 100 : (self.ammo / gun.magazine) * 100}%`,
             }}
           />
         </div>
+      </div>
+      <div className="loadout-bar" role="group" aria-label="Choose a gun: keys 1 to 4">
+        {WEAPONS.map((weapon, i) => <button key={weapon.name} aria-pressed={self.weapon === i} disabled={self.health <= 0 || world.status !== "playing"} onClick={(event) => { onWeapon?.(i as WeaponId); event.currentTarget.blur(); }} title={weapon.description} style={{"--gun":weapon.color} as React.CSSProperties}><kbd>{i+1}</kbd><strong>{weapon.short}</strong><small>{i === 3 ? "STRONGEST" : i === 1 ? "7 PELLETS" : i === 2 ? "RAPID FIRE" : "ALL-ROUNDER"}</small></button>)}
       </div>
       <div className="dash-hud">
         <span>
@@ -1281,6 +1298,7 @@ function GameHUD({
         <span>
           <kbd>R</kbd>RELOAD
         </span>
+        <span><kbd>1–4</kbd>SWITCH GUN</span>
         <span>
           <kbd>ESC</kbd>MENU
         </span>
@@ -1416,7 +1434,8 @@ function Manual({ close, difficulty }: { close: () => void; difficulty: Difficul
             "HOLD E",
             "Hack relays, collect the core, or revive a downed crewmate",
           ],
-          ["R", "Reload your 14-round magazine; reserve ammo is unlimited"],
+          ["1 / 2 / 3 / 4", "Pulse carbine / Thunder shotgun / Cyclone minigun / Nova cannon"],
+          ["R", "Reload the selected gun; reserve ammo is unlimited"],
           ["ESC / M / F", "Menu / mute / fullscreen"],
         ].map(([key, text]) => (
           <div key={key}>
@@ -1425,16 +1444,17 @@ function Manual({ close, difficulty }: { close: () => void; difficulty: Difficul
           </div>
         ))}
       </div>
+      <div className="manual-arsenal">{WEAPONS.map((gun,i)=><div key={gun.name}><kbd>{i+1}</kbd><strong>{gun.name}{i===3?" · STRONGEST":""}</strong><span>{gun.damage}{gun.pellets>1?" × "+gun.pellets:""} damage · {gun.magazine} rounds</span></div>)}</div>
       <p className="manual-note">
         Phones use the left stick to move and the right stick to aim and fire.
         ACT replaces E. Gamepads use left/right sticks, RT to fire, A to dash, X
-        to reload, and Y to interact.
+        to reload, Y to interact, and B to cycle guns. All four guns are unlocked; you start with the Nova cannon.
       </p>
       <p className="manual-note">
-        Shields recharge after 4.5 seconds without taking damage. Green medkits
+        Casual is the recommended starting difficulty: weaker, slower enemies, fast hacks, a two-second extraction, and faster shield recovery. Green medkits
         restore health. Walls and crates block shots. Friendly fire is off. The
         mission ends if the whole crew goes down or the four-minute lockdown
-        expires. Hacking stops while moving or under fire, and decays when abandoned. Clear nearby enemies to hack and extract. Red floor marks warn of an incoming security strike: dash away before impact. The core triggers a final security surge.
+        expires. On Tactical and above, hacking is interrupted by incoming fire, abandoned progress decays, and nearby enemies block hacking and extraction. Red floor marks warn of a security strike: dash away before impact.
       </p>
       <button className="button primary full" onClick={close}>
         I’M READY. LET’S GET LOUD.

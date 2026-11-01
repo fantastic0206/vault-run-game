@@ -1,5 +1,6 @@
 import { EMPTY_INPUT, type Input, type Room, type World } from "./types.js";
 import { isDifficulty } from "./balance.js";
+import { isWeapon, WEAPONS } from "./weapons.js";
 export function sanitizeInput(value: unknown): Input | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
@@ -21,6 +22,7 @@ export function sanitizeInput(value: unknown): Input | null {
     shoot: v.shoot === true,
     interact: v.interact === true,
     reload: v.reload === true,
+    weapon: isWeapon(v.weapon) ? v.weapon : -1,
   };
 }
 export function validWorld(value: unknown, ids: string[]): value is World {
@@ -39,7 +41,7 @@ function checkWorld(value: unknown, ids: string[]): value is World {
         Math.abs((p as Record<string, number>)[k]) < 60,
     );
   return (
-    w.version === 2 &&
+    w.version === 3 &&
     isDifficulty(w.difficulty) &&
     ids.length > 0 && ids.length <= 4 &&
     Number.isFinite(w.time) &&
@@ -67,6 +69,8 @@ function checkWorld(value: unknown, ids: string[]): value is World {
         p.health <= 100 &&
         p.shield >= 0 &&
         p.shield <= 50 &&
+        isWeapon(p.weapon) && p.ammo >= 0 && p.ammo <= WEAPONS[p.weapon].magazine &&
+        Array.isArray(p.magazines) && p.magazines.length === WEAPONS.length && p.magazines.every((ammo, i) => Number.isFinite(ammo) && ammo >= 0 && ammo <= WEAPONS[i].magazine) &&
         [
           "angle",
           "health",
@@ -107,6 +111,8 @@ function checkWorld(value: unknown, ids: string[]): value is World {
         position(b) &&
         typeof b.owner === "string" &&
         typeof b.enemy === "boolean" &&
+        (b.weapon === undefined || isWeapon(b.weapon)) &&
+        (b.splash === undefined || (Number.isFinite(b.splash) && b.splash >= 0 && b.splash <= 3)) &&
         ["id", "vx", "vz", "life", "damage"].every((k) =>
           Number.isFinite((b as unknown as Record<string, number>)[k]),
         ),
@@ -131,7 +137,7 @@ function checkWorld(value: unknown, ids: string[]): value is World {
         position(e) &&
         Number.isFinite(e.t) &&
         Number.isFinite(e.id) &&
-        ["hit", "explosion", "hack", "heal", "dash"].includes(e.kind),
+        ["hit", "explosion", "nova", "hack", "heal", "dash"].includes(e.kind),
     ) &&
     Array.isArray(w.hazards) && w.hazards.length <= 8 &&
     w.hazards.every((h) => position(h) && Number.isSafeInteger(h.id) && Number.isFinite(h.born) && Number.isFinite(h.delay) && h.delay > 0 && h.delay < 5 && Number.isFinite(h.radius) && h.radius > 0 && h.radius < 8 && typeof h.hit === "boolean") &&

@@ -1,3 +1,4 @@
+import type { WeaponId } from "./weapons.js";
 export interface Vec2 {
   x: number;
   z: number;
@@ -18,6 +19,7 @@ export interface Input {
   reload: boolean;
   dash: number;
   seq: number;
+  weapon: WeaponId | -1;
 }
 export interface Operative extends Vec2 {
   id: string;
@@ -27,6 +29,8 @@ export interface Operative extends Vec2 {
   health: number;
   shield: number;
   ammo: number;
+  weapon: WeaponId;
+  magazines: number[];
   reload: number;
   fire: number;
   dashTime: number;
@@ -57,6 +61,8 @@ export interface Projectile extends Vec2 {
   enemy: boolean;
   owner: string;
   damage: number;
+  weapon?: WeaponId;
+  splash?: number;
 }
 export interface Relay extends Vec2 {
   id: number;
@@ -71,9 +77,9 @@ export interface Pickup extends Vec2 {
 export interface Effect extends Vec2 {
   id: number;
   t: number;
-  kind: "hit" | "explosion" | "hack" | "heal" | "dash";
+  kind: "hit" | "explosion" | "nova" | "hack" | "heal" | "dash";
 }
-export type Difficulty = "tactical" | "lockdown" | "nightmare";
+export type Difficulty = "casual" | "tactical" | "lockdown" | "nightmare";
 export interface SecurityStrike extends Vec2 {
   id: number;
   born: number;
@@ -81,7 +87,7 @@ export interface SecurityStrike extends Vec2 {
   radius: number;
   hit: boolean;
 }
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 export interface World {
   version: number;
   difficulty: Difficulty;
@@ -142,5 +148,6 @@ export const EMPTY_INPUT: Input = {
   reload: false,
   dash: 0,
   seq: 0,
+  weapon: -1,
 };
 export const COLORS = ["#f2c879", "#65dbc9", "#ba9cf1", "#f89179"];
