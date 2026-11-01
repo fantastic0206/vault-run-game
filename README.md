@@ -1,4 +1,4 @@
-# Vault Breach 3D · v1.3 Squad & Compound Update
+# Vault Breach 3D · v1.3.1 Mobile HUD Update
 
 A 3D heist shooter for a crew of 1–4 humans and AI squadmates. This release replaces snapshot-dependent guest controls with local prediction and authoritative input acknowledgements. It also expands the map from 50 × 40 to **100 × 80**, adds **four humanoid security classes** alongside three drone classes, and adds **up to three humanoid AI allies**.
 
@@ -6,7 +6,17 @@ A 3D heist shooter for a crew of 1–4 humans and AI squadmates. This release re
 
 Use the complete release, including all three APIs, `server/`, `src/`, both package files, and `vercel.json`. [DEPLOY.md](DEPLOY.md) has a **browser-only Vercel Drop guide: no terminal or GitHub connection required**. Each Drop creates a new project and URL. Add your existing **REDIS_URL** to that project's Production environment and redeploy from its dashboard.
 
-Every player must open the same new Production URL and refresh. Create a fresh room after updating. The footer reads **V1.3 · SQUAD & COMPOUND UPDATE**. `/api/live` reports version `1.3.0` and protocol `4`. Redeploying old source does not install this release.
+Every player must open the same new Production URL and refresh. Create a fresh room after updating. The footer reads **V1.3.1 · MOBILE HUD UPDATE**. `/api/live` reports version `1.3.1` and protocol `4`. Redeploying old source does not install this release.
+
+## Mobile layout repair in v1.3.1
+
+Phone layouts now use a dedicated compact HUD in portrait, landscape, short browser windows, and on touch tablets. A slim objective/timer bar sits at the top, with small health/ammo cards below. Movement and aim/fire sticks stay in opposite bottom corners. Large ACT, DASH and LOAD buttons sit between the sticks; four gun slots use a separate row. The center of the playfield stays clearer than the former stacked desktop panels.
+
+Tap the map button beside Pause for the tactical map, squad health, mission details, sound and fullscreen. Opening this drawer pauses solo; co-op continues with your controls released. Close it to return to play. Menus, dialogs and controls account for safe-area insets, dynamic browser height and smaller widths. Phone interaction hints show **ACT**.
+
+Joystick travel scales to the actual ring size. Each action tracks its own pointer. Cancellation, lost capture, rotation/resizing, backgrounding and unmounting release touch input. Cooling/reloading buttons remain able to receive a finger-up event, preventing a disabled button from trapping a held action. Downed operatives have their touch controls removed until revived.
+
+This is a source-package update. The supplied screenshot shows the previous layout at `vault-run-game.vercel.app`; that live site was observed running v1.3. This workspace cannot start a local browser preview, and its cloud browser cannot initialize WebGL. Mobile visual rendering and real-phone multi-touch therefore remain unverified; build, server-rendered UI and input checks are separate evidence. A calculation of the compact CSS geometry passed 17 phone/tablet viewport and safe-area combinations, including 924 × 384 and narrow 320 px portrait, with no overlaps among the primary status/control rectangles and 44 px button targets. This calculation is not a browser layout test.
 
 ## What changed in multiplayer
 
@@ -106,11 +116,11 @@ npm run build
 npm run demo
 ```
 
-**69 automated tests pass**, including real client transport/runtime integration across two HTTP/WebSocket servers with four seats, guest refresh, leaving, rematch, every pub/sub message dropped, publish/subscribe rejected, and WebSocket upgrades blocked. Deterministic latency tests verify immediate guest movement and shooting at 50/120/250 ms one-way delay with jitter, loss and duplicates, full-speed travel, stop convergence, dash/collision parity, projectile continuity and command deduplication. Tests also verify map routes, all seven enemy classes, AI following/fighting/reviving, bot slot replacement, weapon patterns, damage, splash, magazines/reloads, easier Casual objectives, all difficulty levels, frame payload bounds, authorization, stale-state rejection, and late checkpoint recovery. The Three.js geometry smoke test builds the full level, all seven enemy classes, AI and guns, and clears dynamic models between missions with a mocked renderer. Graphics/control adapters are stubbed in runtime tests; these are not browser/GPU tests.
+**74 automated tests pass**, including real client transport/runtime integration across two HTTP/WebSocket servers with four seats, guest refresh, leaving, rematch, every pub/sub message dropped, publish/subscribe rejected, and WebSocket upgrades blocked. Deterministic latency tests verify immediate guest movement and shooting at 50/120/250 ms one-way delay with jitter, loss and duplicates, full-speed travel, stop convergence, dash/collision parity, projectile continuity and command deduplication. Tests also verify map routes, all seven enemy classes, AI following/fighting/reviving, bot slot replacement, weapon patterns, damage, splash, magazines/reloads, easier Casual objectives, all difficulty levels, frame payload bounds, authorization, stale-state rejection, and late checkpoint recovery. The Three.js geometry smoke test builds the full level, all seven enemy classes, AI and guns, and clears dynamic models between missions with a mocked renderer. Graphics/control adapters are stubbed in runtime tests; these are not browser/GPU tests.
 
 The production build, standalone HTML, compiled Vercel endpoints, and server-rendered menu/HUD checks pass. `npm run build` creates `dist`; `npm run demo` regenerates PLAY-SOLO.html; `npm run preview` serves the built frontend with the same API locally.
 
-The workspace preview relay is unavailable. Browser/GPU appearance, real-device performance/controls, the user's live Redis provider, and the live Vercel deployment remain unverified. No live Vercel URL or deployment access was supplied. Use DEPLOY.md's acceptance check after updating the source.
+The workspace preview relay is unavailable. Browser/GPU appearance, real-device performance/controls, the user's live Redis provider, and the live Vercel deployment remain unverified. The live v1.3 URL was supplied in the mobile report; deployment access was not supplied, and WebGL cannot start in the workspace browser. Use DEPLOY.md's acceptance check after updating the source.
 
 ## Source map
 
@@ -126,7 +136,8 @@ The workspace preview relay is unavailable. Browser/GPU appearance, real-device 
 - `server/sync.ts`: authenticated durable frames and controls
 - `server/live.ts`, `rooms.ts`, `storage.ts`: relay, room lifecycle and shared storage
 - `api/room.ts`, `api/live.ts`, `api/sync.ts`: deployable Vercel functions
-- `src/main.tsx`, `style.css`: menus, lobby, HUD, arsenal and recovery
+- `src/main.tsx`, `style.css`, `mobile.css`: menus, compact/desktop HUD, tactical drawer and recovery
+- `src/game/touch.ts`: scaled joystick vectors and per-finger action ownership
 - `tests/`: game, network, recovery and weapon regressions
 
 All models, textures and effects are generated by code. MIT license; dependencies retain their licenses. The earlier illustrated previews were art-direction concepts, not captures of the running game.

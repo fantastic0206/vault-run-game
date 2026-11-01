@@ -6,7 +6,7 @@ This is a separate project from the earlier Vault Run card game. Deploy the **co
 
 1. Download and extract this release ZIP. Select the **vault-breach-3d folder whose top level contains package.json and vercel.json**. Its `api`, `server`, and `src` folders must be included.
 2. Open [Vercel Drop](https://vercel.com/drop), sign in, and drag that complete folder into the page. Choose a team and project name, then **Deploy**. Vercel builds the Vite project using the included configuration: build command `npm run build`, output `dist`, Node.js 24.
-3. When the build finishes, open the new project's Production URL. Confirm the home footer reads **V1.3 · SQUAD & COMPOUND UPDATE**. Solo is ready immediately, including optional AI backup.
+3. When the build finishes, open the new project's Production URL. Confirm the home footer reads **V1.3.1 · MOBILE HUD UPDATE**. Solo is ready immediately, including optional AI backup.
 4. Open the new Vercel project's **Settings → Environment Variables**. Add **REDIS_URL** for **Production**. If you already have a working Redis database from the previous version, reuse its actual full TLS Redis URL. Environment variables do not automatically transfer to a new Drop project.
 
    ```text
@@ -22,7 +22,7 @@ This is a separate project from the earlier Vault Run card game. Deploy the **co
 
 Each Vercel Drop creates a **new project and URL**. Uploading this source as another Drop does not update the old project. A dashboard redeploy rebuilds the source already attached to that project; it does not upload a new release. These are Vercel Drop's current workflow rules, described in [Vercel's official guide](https://vercel.com/kb/guide/vercel-drop-vs-netlify-drop).
 
-`/api/live` should report `version: "1.3.0"` and `protocol: 4`. A normal visit to that URL returns diagnostic JSON; live play uses a WebSocket upgrade to the same endpoint. Include all three functions: `api/room.ts`, `api/live.ts`, and `api/sync.ts`.
+`/api/live` should report `version: "1.3.1"` and `protocol: 4`. A normal visit to that URL returns diagnostic JSON; live play uses a WebSocket upgrade to the same endpoint. Include all three functions: `api/room.ts`, `api/live.ts`, and `api/sync.ts`.
 
 ## Fast solo check
 
@@ -46,6 +46,18 @@ Open **PLAY-SOLO.html** after extracting the ZIP. It includes the playable 3D ga
 
 On phones, test both sticks and the ACT, DASH, and LOAD controls. On gamepads, test right-stick aim after moving the mouse at least once. Check frame rate on the devices your friends will actually use.
 
+## Mobile acceptance check
+
+1. Confirm the footer reads **V1.3.1 · MOBILE HUD UPDATE**, then start a solo run on a phone.
+2. In portrait, check the slim top objective/timer, health left, ammo right, sticks in opposite bottom corners, and separate action/gun rows. The full desktop sidebars must be hidden.
+3. Rotate to landscape with the address bar visible. Check that no status card, weapon row or action button overlaps a stick or extends below the viewport. Also check fullscreen and a notched device when available.
+4. Move and aim/fire with two fingers at once. Release one finger: only its own control should stop. While holding movement or ACT, rotate, switch apps or open Pause/the tactical map; return and confirm no action is stuck.
+5. Tap the map icon beside Pause. The map, squad and mission information should be readable and scrollable, with a reachable close button. Solo pauses; co-op continues. Closing restores controls. Sound/fullscreen buttons live in this drawer.
+6. Switch all four guns, reload and dash. Cooldown/reload feedback must remain readable and releasing the button must always end a hold. Verify touch controls disappear while downed and return after a revive.
+7. Check home, lobby, room-code/copy controls, field manual and results on a narrow phone. Forms and dialogs should scroll instead of clipping. Recheck a normal desktop window.
+
+These are deployment acceptance steps, not claims of real-phone verification in this workspace.
+
 ## Troubleshooting
 
 | Problem                                                              | Check                                                                                                                                                                            |
@@ -59,7 +71,7 @@ On phones, test both sticks and the ACT, DASH, and LOAD controls. On gamepads, t
 | The host switches away and the game slows                            | Keep the host's browser tab active. Browser background throttling affects the host simulation.                                                                                   |
 | The host leaves entirely                                             | The crew can regroup after the host timeout; a remaining player becomes squad lead. The project does not migrate an in-progress simulation between different players.            |
 | 3D graphics fail to start                                            | Use a current WebGL 2 browser and check hardware acceleration. Older WebGL 1-only browsers are unsupported.                                                                      |
-| Guest controls freeze after a refresh                                | Confirm all clients are running v1.3, refresh every page, and create a fresh room. New connections have independent input streams; acknowledgements belong to that stream. |
+| Guest controls freeze after a refresh                                | Confirm all clients are running v1.3.1, refresh every page, and create a fresh room. New connections have independent input streams; acknowledgements belong to that stream. |
 | A guest gets a refresh/version message                               | Frontend and server versions differ. Open the latest production URL, refresh, and create a new room. |
 | Frame rate is low or the graphics context is lost                     | Use **GRAPHICS: LOW** on the home screen, or the low-graphics reload on the recovery screen. |
 | `PLAY-SOLO.html` cannot create rooms                                 | Intentional: it is a self-contained solo preview. Use the complete deployment for co-op.                                                                                         |

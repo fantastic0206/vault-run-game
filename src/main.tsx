@@ -25,6 +25,7 @@ import {
   HelpCircle,
   Keyboard,
   LockKeyhole,
+  Map as MapIcon,
   MousePointer2,
   Pause,
   Play,
@@ -49,7 +50,7 @@ import {
   MISSION_SECONDS,
   vaultOpen,
 } from "./game/simulation";
-import { COLORS, type Room, type Session, type World } from "./game/types";
+import { COLORS, type Room, type Session, type World, type Operative } from "./game/types";
 import type { Difficulty } from "./game/types";
 import { DIFFICULTIES, EXTRACT_SECONDS, HACK_SECONDS } from "./game/balance";
 import { graphicsQuality } from "./game/art";
@@ -57,7 +58,9 @@ import { ALLY_NAMES } from "./game/ai";
 import { ENEMIES } from "./game/enemies";
 import { WEAPONS, type WeaponId } from "./game/weapons";
 import { CrewLink, NetworkError, roomApi } from "./network";
+import { stickVector, TouchPointers } from "./game/touch";
 import "./style.css";
+import "./mobile.css";
 
 const SOLO_PREVIEW =
   location.protocol === "file:" ||
@@ -126,6 +129,7 @@ function App() {
   const [runtimeError, setRuntimeError] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("casual");
   const [bots, setBots] = useState(1);
+  const [tacticalOpen, setTacticalOpen] = useState(false);
   const [busy, setBusy] = useState(false),
     busyRef = useRef(false),
     [paused, setPaused] = useState(false),
@@ -158,6 +162,7 @@ function App() {
       if (runtime.current?.multiplayer) runtime.current.menu();
       setPage("lobby");
       setPaused(false);
+      setTacticalOpen(false);
     } else if (liveRef.current && runtime.current) {
       runtime.current.coop(next, checkpoint);
       runtime.current.roomUpdate(next);
@@ -166,6 +171,7 @@ function App() {
   };
   callbacks.current.outcome = (world) => {
     setPaused(false);
+    setTacticalOpen(false);
     if (
       seatRef.current &&
       runtime.current?.authority &&
@@ -270,6 +276,7 @@ function App() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest("input,textarea")) return;
+      if (e.code === "Escape" && tacticalOpen) { e.preventDefault(); toggleTactical(); return; }
       if (e.code === "Escape" && page === "game" && hud?.status === "playing") {
         e.preventDefault();
         togglePause();
@@ -279,8 +286,15 @@ function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [page, paused, soundOn, hud?.status]);
+  }, [page, paused, tacticalOpen, soundOn, hud?.status]);
+  function toggleTactical() {
+    const next = !tacticalOpen;
+    runtime.current?.controls.reset();
+    runtime.current?.pause(next);
+    setTacticalOpen(next);
+  }
   function togglePause() {
+    setTacticalOpen(false);
     const next = !paused;
     runtime.current?.pause(next);
     setPaused(next);
@@ -311,6 +325,7 @@ function App() {
     link.current?.close();
     setConnectionError("");
     setRuntimeError("");
+    setTacticalOpen(false);
     history.replaceState(null, "", location.pathname);
   }
   function solo() {
@@ -327,6 +342,7 @@ function App() {
     runtime.current?.solo(name.trim() || "Rook", difficulty, bots);
     setPage("game");
     setPaused(false);
+    setTacticalOpen(false);
     setToast("MISSION LIVE · Disable the three security relays.");
   }
   async function enter(type: "create" | "join", code = "") {
@@ -392,6 +408,7 @@ function App() {
   }
   function exitMission() {
     setPaused(false);
+    setTacticalOpen(false);
     if (seat) void perform("leave");
     else {
       runtime.current?.menu();
@@ -571,16 +588,13 @@ function App() {
             soundOn={soundOn}
             onSound={toggleSound}
             onWeapon={(weapon) => runtime.current?.controls.selectWeapon(weapon)}
+            tacticalOpen={tacticalOpen}
+            onTactical={toggleTactical}
+            networkNotice={seat && (!live || connectionError || runtime.current?.awaitingFrame) ? connectionError || (runtime.current?.awaitingFrame ? "Synchronizing mission with the squad lead…" : "Reconnecting to the crew…") : ""}
+            onReconnect={() => link.current?.resync()}
           />
-          {hud.status === "playing" && !paused && (
-            <TouchControls runtime={runtime.current} />
-          )}{" "}
-          {seat && (!live || connectionError || runtime.current?.awaitingFrame) && (
-            <div className="network-banner" role="status">
-              <WifiOff size={14} />
-              {connectionError || (runtime.current?.awaitingFrame ? "Synchronizing mission with the squad lead…" : "Reconnecting to the crew…")}
-              <button onClick={() => link.current?.resync()}>RECONNECT</button>
-            </div>
+          {hud.status === "playing" && !paused && !tacticalOpen && (hud.players.find(p => p.id === currentId)?.health ?? 0) > 0 && (
+            <TouchControls runtime={runtime.current} player={hud.players.find(p => p.id === currentId)} />
           )}
           {hud.status === "playing" && paused && (
             <div className="modal-shade">
@@ -720,6 +734,9 @@ function App() {
 function DifficultySelect({ value, onChange, disabled = false }: { value: Difficulty; onChange: (value: Difficulty) => void; disabled?: boolean }) {
   return <div className="difficulty-select"><span className="eyebrow">THREAT LEVEL</span><div role="group" aria-label="Mission difficulty">{(Object.keys(DIFFICULTIES) as Difficulty[]).map((key, i) => <button key={key} aria-pressed={value === key} disabled={disabled} className={value === key ? "selected" : ""} onClick={() => onChange(key)}><span>{Array.from({length:i+1}, (_, n) => <i key={n}/>)}</span>{DIFFICULTIES[key].name}</button>)}</div><p>{DIFFICULTIES[value].subtitle}</p></div>;
 }
+function DeviceKey({ value = "E" }: { value?: string }) {
+  return <><span className="keyboard-key">{value}</span><span className="phone-key">ACT</span></>;
+}
 function MissionBrief({ difficulty = "casual" }: { difficulty?: Difficulty }) {
   return (
     <div className="mission-brief">
@@ -728,7 +745,7 @@ function MissionBrief({ difficulty = "casual" }: { difficulty?: Difficulty }) {
         <Target size={17} />
         <p>
           <strong>DISABLE SECURITY</strong>
-          <small>{DIFFICULTIES[difficulty].perimeter ? "Clear each relay. " : "Find the marked relays. "}Hold still + E for {HACK_SECONDS(difficulty)}s.</small>
+          <small>{DIFFICULTIES[difficulty].perimeter ? "Clear each relay. " : "Find the marked relays. "}Hold still + <DeviceKey/> for {HACK_SECONDS(difficulty)}s.</small>
         </p>
       </div>
       <div>
@@ -736,7 +753,7 @@ function MissionBrief({ difficulty = "casual" }: { difficulty?: Difficulty }) {
         <Gem size={17} />
         <p>
           <strong>STEAL THE CORE</strong>
-          <small>Enter the open vault. Press E to grab the core.</small>
+          <small>Enter the open vault. Press <DeviceKey/> to grab the core.</small>
         </p>
       </div>
       <div>
@@ -992,7 +1009,7 @@ function Home({
           GET IN. GET OUT. GET RICH.
         </span>
         <span>WASD TO MOVE · MOUSE TO AIM · SPACE TO DASH</span>
-        <span>V1.3 · SQUAD & COMPOUND UPDATE</span>
+        <span>V1.3.1 · MOBILE HUD UPDATE</span>
       </footer>
     </div>
   );
@@ -1094,6 +1111,38 @@ function MiniMap({ world, selfId }: { world: World; selfId: string }) {
     </div>
   );
 }
+function SquadReadout({ world, selfId }: { world: World; selfId: string }) {
+  return (<div className="squad-hud">
+          {world.players.map((p) => (
+            <div
+              key={p.id}
+              style={{ "--agent": COLORS[p.color] } as React.CSSProperties}
+            >
+              <span className="squad-icon">
+                <Crosshair size={13} />
+              </span>
+              <strong>
+                {p.name}
+                {p.id === selfId && <small> YOU</small>}{p.isBot && <small> AI</small>}
+              </strong>
+              <span className={p.health === 0 ? "downed" : ""}>
+                {p.health === 0 ? "DOWN" : Math.ceil(p.health)}
+              </span>
+            </div>
+          ))}
+        </div>);
+}
+
+function TacticalDrawer({ world, selfId, room, close, onFullscreen, soundOn, onSound }: { world: World; selfId: string; room: string | null; close: () => void; onFullscreen: () => void; soundOn: boolean; onSound: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  return <dialog ref={dialog} id="tactical-map" className="mobile-tactical" aria-labelledby="tactical-title" onCancel={event => { event.preventDefault(); close(); }} onClick={event => { if(event.target === event.currentTarget) close(); }}>
+    <header><div><span>{room ? `ROOM ${room}` : "SOLO OPERATION"} · {DIFFICULTIES[world.difficulty].name}</span><h2 id="tactical-title">TACTICAL MAP</h2><small>{room ? "The co-op mission continues." : "Solo mission paused."}</small></div><button autoFocus type="button" className="icon-button" aria-label="Close tactical map" onClick={close}><X size={20}/></button></header>
+    <div className="tactical-grid"><MiniMap world={world} selfId={selfId}/><section><h3>YOUR CREW</h3><SquadReadout world={world} selfId={selfId}/><MissionBrief difficulty={world.difficulty}/></section></div>
+    <footer><button type="button" onClick={onSound}>{soundOn ? <Volume2 size={17}/> : <VolumeX size={17}/>} SOUND {soundOn ? "ON" : "OFF"}</button><button type="button" onClick={onFullscreen}><Expand size={17}/> FULLSCREEN</button></footer>
+  </dialog>;
+}
+
 function GameHUD({
   world,
   selfId,
@@ -1103,6 +1152,10 @@ function GameHUD({
   soundOn,
   onSound,
   onWeapon,
+  tacticalOpen = false,
+  onTactical = () => {},
+  networkNotice = "",
+  onReconnect = () => {},
 }: {
   world: World;
   selfId: string;
@@ -1112,6 +1165,10 @@ function GameHUD({
   soundOn: boolean;
   onSound: () => void;
   onWeapon?: (weapon: WeaponId) => void;
+  tacticalOpen?: boolean;
+  onTactical?: () => void;
+  networkNotice?: string;
+  onReconnect?: () => void;
 }) {
   const self = world.players.find((p) => p.id === selfId) ?? world.players[0],
     done = world.relays.filter((r) => r.done).length,
@@ -1146,6 +1203,7 @@ function GameHUD({
             {formatTime(remaining)}
           </strong>
         </div>
+        <button type="button" className="icon-button mobile-map-toggle" aria-label="Open tactical map" aria-haspopup="dialog" aria-expanded={tacticalOpen} aria-controls="tactical-map" onClick={onTactical}><MapIcon size={19}/></button>
         <button
           className="icon-button"
           aria-label="Pause menu"
@@ -1180,27 +1238,8 @@ function GameHUD({
             </small>
           )}
         </div>
-        <div className="squad-hud">
-          {world.players.map((p) => (
-            <div
-              key={p.id}
-              style={{ "--agent": COLORS[p.color] } as React.CSSProperties}
-            >
-              <span className="squad-icon">
-                <Crosshair size={13} />
-              </span>
-              <strong>
-                {p.name}
-                {p.id === selfId && <small> YOU</small>}{p.isBot && <small> AI</small>}
-              </strong>
-              <span className={p.health === 0 ? "downed" : ""}>
-                {p.health === 0 ? "DOWN" : Math.ceil(p.health)}
-              </span>
-            </div>
-          ))}
-        </div>
+        <SquadReadout world={world} selfId={selfId}/>
       </div>
-      {world.hazards.some((h) => !h.hit && Math.hypot(h.x - self.x, h.z - self.z) < h.radius + 1) && <div className="strike-warning"><Target size={17}/><strong>SECURITY STRIKE</strong><span>MOVE OUT OF THE RED ZONE</span></div>}
       <div className="hud-right">
         <MiniMap world={world} selfId={selfId} />
         <div className="hud-tools">
@@ -1226,7 +1265,7 @@ function GameHUD({
       <div className={`health-panel ${self.health < 30 ? "critical" : ""}`}>
         <span className="health-name">
           <Crosshair size={13} />
-          {self.name.toUpperCase()}
+          <b className="operative-name">{self.name.toUpperCase()}</b>
           <small>{self.health <= 0 ? "DOWNED" : "FIELD OPERATIVE"}</small>
         </span>
         <div className="health-row">
@@ -1267,7 +1306,7 @@ function GameHUD({
         </div>
       </div>
       <div className="loadout-bar" role="group" aria-label="Choose a gun: keys 1 to 4">
-        {WEAPONS.map((weapon, i) => <button key={weapon.name} aria-pressed={self.weapon === i} disabled={self.health <= 0 || world.status !== "playing"} onClick={(event) => { onWeapon?.(i as WeaponId); event.currentTarget.blur(); }} title={weapon.description} style={{"--gun":weapon.color} as React.CSSProperties}><kbd>{i+1}</kbd><strong>{weapon.short}</strong><small>{i === 3 ? "STRONGEST" : i === 1 ? "7 PELLETS" : i === 2 ? "RAPID FIRE" : "ALL-ROUNDER"}</small></button>)}
+        {WEAPONS.map((weapon, i) => <button key={weapon.name} aria-label={`Equip ${weapon.name}`} aria-pressed={self.weapon === i} disabled={self.health <= 0 || world.status !== "playing"} onClick={(event) => { onWeapon?.(i as WeaponId); event.currentTarget.blur(); }} title={weapon.description} style={{"--gun":weapon.color} as React.CSSProperties}><kbd>{i+1}</kbd><strong>{weapon.short}</strong><small>{i === 3 ? "STRONGEST" : i === 1 ? "7 PELLETS" : i === 2 ? "RAPID FIRE" : "ALL-ROUNDER"}</small></button>)}
       </div>
       <div className="dash-hud">
         <span>
@@ -1282,16 +1321,19 @@ function GameHUD({
           {self.dashCooldown > 0 ? self.dashCooldown.toFixed(1) + "s" : "READY"}
         </small>
       </div>
+      <div className="hud-notices">
+      {networkNotice && <div className="network-banner" role="status"><WifiOff size={14}/><span>{networkNotice}</span><button type="button" onClick={onReconnect}>RECONNECT</button></div>}
+      {world.hazards.some((h) => !h.hit && Math.hypot(h.x - self.x, h.z - self.z) < h.radius + 1) && <div className="strike-warning"><Target size={17}/><strong>SECURITY STRIKE</strong><span>MOVE OUT OF THE RED ZONE</span></div>}
       {self.health <= 0 && world.status === "playing" ? (
         <div className="interaction-prompt down">
           <Heart size={17} />
           <strong>OPERATIVE DOWN</strong>
-          <p>A crewmate can hold E near you to revive.</p>
+          <p>A crewmate can hold <DeviceKey/> near you to revive.</p>
         </div>
       ) : (
         hint && (
           <div className="interaction-prompt">
-            {hint.key && <kbd>{hint.key}</kbd>}
+            {hint.key && <kbd><DeviceKey value={hint.key}/></kbd>}
             <strong>{hint.text}</strong>
             {hint.progress > 0 && (
               <div>
@@ -1303,6 +1345,8 @@ function GameHUD({
           </div>
         )
       )}
+      </div>
+      {tacticalOpen && <TacticalDrawer world={world} selfId={selfId} room={room} close={onTactical} onFullscreen={onFullscreen} soundOn={soundOn} onSound={onSound}/>}
       <div className="desktop-controls">
         <span>
           <kbd>W A S D</kbd>MOVE
@@ -1326,94 +1370,63 @@ function GameHUD({
   );
 }
 
-function Stick({
-  kind,
-  runtime,
-}: {
-  kind: "move" | "aim";
-  runtime: Runtime | null;
-}) {
-  const [knob, setKnob] = useState({ x: 0, y: 0 }),
-    pointer = useRef<number | null>(null);
-  const update = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect(),
-      x = (e.clientX - r.left - r.width / 2) / 42,
-      y = (e.clientY - r.top - r.height / 2) / 42,
-      len = Math.max(1, Math.hypot(x, y));
-    runtime?.controls.stick(kind, x / len, y / len);
-    setKnob({ x: (x / len) * 32, y: (y / len) * 32 });
+function Stick({ kind, runtime }: { kind: "move" | "aim"; runtime: Runtime | null }) {
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const pointer = useRef<number | null>(null);
+  useEffect(() => {
+    const reset = () => { pointer.current = null; runtime?.controls.stick(kind,0,0,false); setKnob({x:0,y:0}); };
+    const visibility = () => { if(document.hidden) reset(); };
+    window.addEventListener("blur",reset); window.addEventListener("resize",reset); window.addEventListener("pagehide",reset); document.addEventListener("visibilitychange",visibility);
+    return () => { runtime?.controls.stick(kind,0,0,false); window.removeEventListener("blur",reset); window.removeEventListener("resize",reset); window.removeEventListener("pagehide",reset); document.removeEventListener("visibilitychange",visibility); };
+  },[kind,runtime]);
+  const update = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const v = stickVector(event.currentTarget.getBoundingClientRect(),event.clientX,event.clientY);
+    runtime?.controls.stick(kind,v.x,v.y);
+    setKnob({x:v.offsetX,y:v.offsetY});
   };
-  const end = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (pointer.current !== e.pointerId) return;
-    pointer.current = null;
-    runtime?.controls.stick(kind, 0, 0, false);
-    setKnob({ x: 0, y: 0 });
+  const end = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if(pointer.current !== event.pointerId) return;
+    pointer.current = null; runtime?.controls.stick(kind,0,0,false); setKnob({x:0,y:0});
+    if(event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
-  return (
-    <div
-      className={`touch-stick ${kind}`}
-      role="group"
-      aria-label={kind === "move" ? "Drag to move" : "Drag to aim and fire"}
-      onPointerDown={(e) => {
-        if (pointer.current !== null) return;
-        pointer.current = e.pointerId;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        update(e);
-      }}
-      onPointerMove={(e) => {
-        if (pointer.current === e.pointerId) update(e);
-      }}
-      onPointerUp={end}
-      onPointerCancel={end}
-    >
-      <span className="stick-ring" />
-      <i style={{ transform: `translate(${knob.x}px,${knob.y}px)` }}>
-        {kind === "move" ? <Crosshair size={24} /> : <Target size={24} />}
-      </i>
-      <small>{kind === "move" ? "MOVE" : "AIM + FIRE"}</small>
-    </div>
-  );
+  return <div className={`touch-stick ${kind}`} role="group" aria-label={kind === "move" ? "Drag to move" : "Drag to aim and fire"}
+    onPointerDown={event => { if(pointer.current !== null) return; event.preventDefault(); pointer.current=event.pointerId; event.currentTarget.setPointerCapture(event.pointerId); update(event); }}
+    onPointerMove={event => { if(pointer.current === event.pointerId) update(event); }}
+    onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}>
+    <span className="stick-ring"/><i style={{transform:`translate(${knob.x}px,${knob.y}px)`}}>{kind === "move" ? <Crosshair size={24}/> : <Target size={24}/>}</i><small>{kind === "move" ? "MOVE" : "AIM + FIRE"}</small>
+  </div>;
 }
-function TouchControls({ runtime }: { runtime: Runtime | null }) {
-  const hold = (
-    kind: "dash" | "interact" | "reload",
-    down: boolean,
-    e: ReactPointerEvent<HTMLButtonElement>,
-  ) => {
-    e.preventDefault();
-    if (down) e.currentTarget.setPointerCapture(e.pointerId);
-    runtime?.controls.action(kind, down);
+function TouchControls({ runtime, player }: { runtime: Runtime | null; player?: Operative }) {
+  const pointers = useRef(new TouchPointers());
+  useEffect(() => {
+    const reset = () => { pointers.current.clear(); for(const kind of ["interact","dash","reload"] as const) runtime?.controls.action(kind,false); };
+    const visibility = () => { if(document.hidden) reset(); };
+    window.addEventListener("blur",reset); window.addEventListener("resize",reset); window.addEventListener("pagehide",reset); document.addEventListener("visibilitychange",visibility);
+    return () => { reset(); window.removeEventListener("blur",reset); window.removeEventListener("resize",reset); window.removeEventListener("pagehide",reset); document.removeEventListener("visibilitychange",visibility); };
+  },[runtime]);
+  const hold = (kind: "dash" | "interact" | "reload", down: boolean, event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    if(down) {
+      if(player && (player.health <= 0 || (kind === "dash" && player.dashCooldown > 0) || (kind === "reload" && player.reload > 0))) return;
+      if(!pointers.current.claim(kind,event.pointerId)) return;
+      event.currentTarget.setPointerCapture(event.pointerId); runtime?.controls.action(kind,true);
+    } else if(pointers.current.release(kind,event.pointerId)) {
+      runtime?.controls.action(kind,false);
+      if(event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
-  return (
-    <div className="touch-controls">
-      <Stick kind="move" runtime={runtime} />
-      <div className="touch-actions">
-        {(["interact", "dash", "reload"] as const).map((kind) => (
-          <button
-            key={kind}
-            aria-label={
-              kind === "interact" ? "Hold to hack, collect, or revive" : kind
-            }
-            onPointerDown={(e) => hold(kind, true, e)}
-            onPointerUp={(e) => hold(kind, false, e)}
-            onPointerCancel={(e) => hold(kind, false, e)}
-          >
-            {kind === "interact" ? (
-              <LockKeyhole size={18} />
-            ) : kind === "dash" ? (
-              <Zap size={18} />
-            ) : (
-              <RotateCcw size={18} />
-            )}
-            <span>
-              {kind === "interact" ? "ACT" : kind === "dash" ? "DASH" : "LOAD"}
-            </span>
-          </button>
-        ))}
-      </div>
-      <Stick kind="aim" runtime={runtime} />
-    </div>
-  );
+  return <div className="touch-controls" onContextMenu={event => event.preventDefault()}>
+    <Stick kind="move" runtime={runtime}/>
+    <div className="touch-actions">{(["interact","dash","reload"] as const).map(kind => <button type="button" key={kind} data-action={kind}
+      aria-label={kind === "interact" ? "Hold to hack, collect, or revive" : kind === "dash" ? "Dash" : "Reload weapon"}
+      disabled={!!player && player.health <= 0}
+      aria-disabled={!!player && ((kind === "dash" && player.dashCooldown > 0) || (kind === "reload" && player.reload > 0))}
+      onPointerDown={event => hold(kind,true,event)} onPointerUp={event => hold(kind,false,event)} onPointerCancel={event => hold(kind,false,event)} onLostPointerCapture={event => hold(kind,false,event)}>
+      {kind === "interact" ? <LockKeyhole size={18}/> : kind === "dash" ? <Zap size={18}/> : <RotateCcw size={18}/>}
+      <span>{kind === "interact" ? "ACT" : kind === "dash" ? (player && player.dashCooldown > 0 ? player.dashCooldown.toFixed(1)+"s" : "DASH") : player && player.reload > 0 ? "LOADING" : "LOAD"}</span>
+    </button>)}</div>
+    <Stick kind="aim" runtime={runtime}/>
+  </div>;
 }
 function Manual({ close, difficulty }: { close: () => void; difficulty: Difficulty }) {
   const ref = useRef<HTMLDialogElement>(null);

@@ -1,3 +1,15 @@
+# v1.3.1 · Mobile HUD Update
+
+- Replace overlapping phone/desktop HUD layers with one compact layout for portrait, landscape, short windows and touch tablets. Anchor vitals below the top bar, sticks in bottom corners, and action/gun controls in separate regions.
+- Move map, crew and mission details into a native tactical dialog with close, sound and fullscreen controls. Pause solo while it is open; keep co-op live with local controls released. Use ACT labels on phones.
+- Respect device safe-area insets and dynamic viewport height. Give key touch controls at least 44 px targets. Improve narrow home/lobby forms and scrollable dialogs.
+- Scale joystick travel from its real rendered size. Track fingers independently and release controls after cancellation, lost capture, rotation, backgrounding or unmount. Keep cooldown/reload buttons able to receive pointer-up events. Hide touch controls while downed.
+- Keep multiplayer protocol/world schema **4**. Refresh the updated frontend after deployment. No Redis or gameplay-data migration is required.
+
+74 automated tests include five new joystick, multi-touch ownership and control-reset checks. Production/standalone build and server-rendered UI checks cover touch controls and tactical states. The provided live URL was inspected at v1.3, but WebGL is unavailable in this browser and local preview infrastructure is unavailable. Real-phone layout/multi-touch verification and deployment of v1.3.1 remain pending.
+
+---
+
 # v1.3.0 · Squad & Compound Update
 
 - Replace guest snapshot-only control with shared 60 Hz movement/weapon simulation, local prediction, host acknowledgements and replay. Read controls once per step. Deduplicate retransmitted command bundles and bound processing by host elapsed time. Keep stream identities aligned across both transports.
